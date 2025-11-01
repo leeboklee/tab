@@ -1,0 +1,47 @@
+{
+  "name": "guitar2tabs",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3009",
+    "backend:run": "python-backend\\venv\\Scripts\\python.exe python-backend\\real_analysis_main.py",
+    "dev:all": "concurrently \"npm:dev\" \"npm:backend:run\"",
+    "build": "next build",
+    "start": "next start -p 3009",
+    "lint": "next lint",
+    "python:dev": "cd python-backend && python -m uvicorn main:app --reload --port 8000",
+    "python:install": "cd python-backend && pip install -r requirements.txt",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down"
+  },
+  "dependencies": {
+    "@tonejs/midi": "^2.0.28",
+    "@types/node": "20.10.5",
+    "@types/react": "18.2.45",
+    "@types/react-dom": "18.2.18",
+    "autoprefixer": "10.4.16",
+    "axios": "^1.11.0",
+    "framer-motion": "10.16.16",
+    "html2canvas": "^1.4.1",
+    "lucide-react": "0.294.0",
+    "next": "^14.2.32",
+    "node-fetch": "^3.3.2",
+    "postcss": "8.4.32",
+    "react": "18.2.0",
+    "react-confetti": "^6.4.0",
+    "react-dom": "18.2.0",
+    "react-dropzone": "14.2.3",
+    "react-hot-toast": "2.4.1",
+    "react-player": "2.13.0",
+    "tailwindcss": "3.3.6",
+    "tone": "^15.1.22",
+    "typescript": "5.3.3",
+    "vexflow": "^5.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "eslint": "8.56.0",
+    "eslint-config-next": "14.0.4",
+    "concurrently": "^9.0.1"
+  }
+}
