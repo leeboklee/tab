@@ -1,0 +1,14 @@
+{
+  "components\\MIDIPlayer.tsx -> @tonejs/midi": {
+    "id": 9514,
+    "files": [
+      "static/chunks/514.5355d3c5921b8c9a.js"
+    ]
+  },
+  "components\\NotationViewer.tsx -> html2canvas": {
+    "id": 4457,
+    "files": [
+      "static/chunks/ad2866b8.a1343deb0eef8820.js"
+    ]
+  }
+}

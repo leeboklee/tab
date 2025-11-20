@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # Next.js 프론트엔드
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3009:3009"
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - guitar2tabs-network
+
+  # Python 백엔드
+  backend:
+    build:
+      context: ./python-backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+      - DATABASE_URL=postgresql://guitar2tabs:password@postgres:5432/guitar2tabs
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./python-backend:/app
+      - ./temp:/app/temp
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - guitar2tabs-network
+
+  # PostgreSQL 데이터베이스
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=guitar2tabs
+      - POSTGRES_USER=guitar2tabs
+      - POSTGRES_PASSWORD=password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - guitar2tabs-network
+
+  # Redis 캐시
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - guitar2tabs-network
+
+  # Nginx 리버스 프록시 (선택사항)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - guitar2tabs-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  guitar2tabs-network:
+    driver: bridge
+
