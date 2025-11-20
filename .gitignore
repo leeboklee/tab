@@ -6,4 +6,5 @@ python-backend/ffmpeg-master-latest-win64-gpl/
 python-backend/__pycache__/
 *.pyc
 playwright-report/
-test-results/
+test-results/
+
