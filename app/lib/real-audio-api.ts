@@ -1,107 +1,28 @@
-/**
- * 실제 오디오 분석 API 클라이언트
- */
-
 const REAL_AUDIO_API_BASE = 'http://localhost:8002'
-
-export interface AudioAnalysisRequest {
-  url: string
-  analysis_type?: 'full' | 'tempo_only' | 'key_only' | 'chords_only'
-}
 
 export interface AudioAnalysisResponse {
   success: boolean
   data?: any
   error?: string
-  processing_time?: number
 }
 
 export class RealAudioAPI {
-  /**
-   * 실제 오디오 분석 수행
-   */
-  static async analyzeAudio(url: string, analysisType: string = 'full'): Promise<AudioAnalysisResponse> {
-    try {
-      // Backend expects /analyze with { url }
-      const response = await fetch(`${REAL_AUDIO_API_BASE}/analyze`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          url
-        })
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return data
-    } catch (error) {
-      console.error('Real audio analysis failed:', error)
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      }
-    }
+  static async analyzeAudio(url: string): Promise<AudioAnalysisResponse> {
+    return this.request('/analyze', { method: 'POST', body: JSON.stringify({ url }) })
   }
 
-  /**
-   * 템포만 빠르게 분석
-   */
-  static async analyzeTempoOnly(url: string): Promise<AudioAnalysisResponse> {
-    try {
-      // Fallback to full analyze when dedicated endpoint is unavailable
-      const response = await fetch(`${REAL_AUDIO_API_BASE}/analyze`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ url })
-      })
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return data
-    } catch (error) {
-      console.error('Tempo analysis failed:', error)
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      }
-    }
+  static async extractAudio(url: string): Promise<AudioAnalysisResponse> {
+    return this.request('/extract-audio', { method: 'POST', body: JSON.stringify({ url }) })
   }
 
-  /**
-   * 테스트용 오디오 분석
-   */
+  static async analyzeFromAudio(audioId: string): Promise<AudioAnalysisResponse> {
+    return this.request('/analyze-from-audio', { method: 'POST', body: JSON.stringify({ audio_id: audioId }) })
+  }
+
   static async testAudioAnalysis(): Promise<AudioAnalysisResponse> {
-    try {
-      const response = await fetch(`${REAL_AUDIO_API_BASE}/test-audio-analysis`)
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-
-      const data = await response.json()
-      return data
-    } catch (error) {
-      console.error('Test audio analysis failed:', error)
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      }
-    }
+    return this.request('/test-audio-analysis')
   }
 
-  /**
-   * 서버 상태 확인
-   */
   static async checkHealth(): Promise<boolean> {
     try {
       const response = await fetch(`${REAL_AUDIO_API_BASE}/health`)
@@ -109,6 +30,29 @@ export class RealAudioAPI {
     } catch (error) {
       console.error('Health check failed:', error)
       return false
+    }
+  }
+
+  private static async request(path: string, init?: RequestInit): Promise<AudioAnalysisResponse> {
+    try {
+      const response = await fetch(`${REAL_AUDIO_API_BASE}${path}`, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        ...init,
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error(`Audio API request failed for ${path}:`, error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }
     }
   }
 }

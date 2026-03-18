@@ -94,6 +94,20 @@ curl -X POST "http://localhost:8000/analyze" \
   -d '{"url": "https://www.youtube.com/watch?v=VIDEO_ID"}'
 ```
 
+### 음원 추출만 먼저 수행 (추출/분석 분리)
+```bash
+curl -X POST "http://localhost:8002/extract-audio" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://www.youtube.com/watch?v=VIDEO_ID"}'
+```
+
+### 저장된 음원으로 탭 생성
+```bash
+curl -X POST "http://localhost:8002/analyze-from-audio" \
+  -H "Content-Type: application/json" \
+  -d '{"audio_id": "AUDIO_ID"}'
+```
+
 ### 비동기 분석 (대용량 파일용)
 ```bash
 # 분석 시작

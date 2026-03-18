@@ -9,7 +9,7 @@ import NotationViewer from '@/components/NotationViewer'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import Navigation from '@/components/Navigation'
 import FavoritesManager from '@/components/FavoritesManager'
-// import { RealAudioAPI } from '@/lib/real-audio-api'
+import { RealAudioAPI } from './lib/real-audio-api'
 // import AdvancedAudioPlayer from '@/components/AdvancedAudioPlayer'
 // import MIDIPlayer from '@/components/MIDIPlayer'
 // import Metronome from '@/components/Metronome'
@@ -65,16 +65,9 @@ export default function Home() {
   useEffect(() => {
     const checkRealAnalysisServer = async () => {
       try {
-        const response = await fetch('http://localhost:8002/health', {
-          method: 'GET',
-          mode: 'cors',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        })
-        const isAvailable = response.ok
+        const isAvailable = await RealAudioAPI.checkHealth()
         setRealAnalysisAvailable(isAvailable)
-        console.log('Real analysis server available:', isAvailable, 'Status:', response.status)
+        console.log('Real analysis server available:', isAvailable)
         if (isAvailable && !realAnalysisAvailable) {
           toast('실제 오디오 분석 서버가 연결되었습니다!', { icon: '✅' })
         }
@@ -255,18 +248,9 @@ export default function Home() {
       
       let analysisResult: any
       if (useRealAnalysis && realAnalysisAvailable) {
-        // 실제 오디오 분석 백엔드 호출
-        const resp = await fetch('http://localhost:8002/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: youtubeUrl })
-        })
-        if (!resp.ok) {
-          throw new Error(`실제 분석 API 호출 실패 (${resp.status})`)
-        }
-        const json = await resp.json()
+        const json = await RealAudioAPI.analyzeAudio(youtubeUrl)
         if (!json?.success || !json?.data) {
-          throw new Error('실제 분석 결과가 비어 있습니다')
+          throw new Error(json?.error || '실제 분석 결과가 비어 있습니다')
         }
         const d = json.data
         analysisResult = {

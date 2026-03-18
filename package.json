@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3009",
-    "backend:run": "python-backend\\venv\\Scripts\\python.exe python-backend\\real_analysis_main.py",
+    "backend:run": "cd python-backend && python real_analysis_main.py",
     "dev:all": "concurrently \"npm:dev\" \"npm:backend:run\"",
     "build": "next build",
     "start": "next start -p 3009",

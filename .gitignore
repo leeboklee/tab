@@ -4,6 +4,8 @@ node_modules
 *.zip
 python-backend/ffmpeg-master-latest-win64-gpl/
 python-backend/__pycache__/
+python-backend/storage/
+python-backend/venv/
 *.pyc
 playwright-report/
 test-results/
