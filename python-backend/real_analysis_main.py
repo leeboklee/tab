@@ -102,8 +102,8 @@ def _estimate_chords(chroma: Any, sr: int, hop_length: int) -> List[Dict[str, An
             "Am": np.array([1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0], dtype=float),
         }
 
-        segment_frames = 64
-        max_segments = 24
+        segment_frames = 96
+        max_segments = 12
         result: List[Dict[str, Any]] = []
         total_frames = chroma.shape[1]
 
@@ -163,8 +163,8 @@ def _analyze_audio_waveform(audio_path: str) -> Tuple[Optional[Dict[str, Any]], 
         }
 
     try:
-        hop_length = 512
-        y, sr = librosa.load(audio_path, sr=22050, mono=True, duration=300)
+        hop_length = 1024
+        y, sr = librosa.load(audio_path, sr=16000, mono=True, duration=90)
         if y is None or len(y) == 0:
             raise RuntimeError("empty audio signal")
 

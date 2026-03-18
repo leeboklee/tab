@@ -31,7 +31,7 @@ class AudioPipelineService:
         backend_root = Path(__file__).resolve().parents[1]
         self.storage_root = storage_root or backend_root / "storage" / "audio"
         self.storage_root.mkdir(parents=True, exist_ok=True)
-        self.ffmpeg_path = shutil.which("ffmpeg")
+        self.ffmpeg_path, self.ffmpeg_source = self._resolve_ffmpeg_path()
         self.yt_dlp_version = yt_dlp.version.__version__
 
     def diagnostics(self) -> Dict[str, Any]:
@@ -39,6 +39,7 @@ class AudioPipelineService:
             "yt_dlp_version": self.yt_dlp_version,
             "ffmpeg_available": bool(self.ffmpeg_path),
             "ffmpeg_path": self.ffmpeg_path,
+            "ffmpeg_source": self.ffmpeg_source,
             "storage_root": str(self.storage_root),
             "cookie_file_configured": bool(self._cookie_file_path()),
         }
@@ -147,6 +148,14 @@ class AudioPipelineService:
             opts["cookiefile"] = cookie_file
         if self.ffmpeg_path:
             opts["ffmpeg_location"] = self.ffmpeg_path
+            opts["prefer_ffmpeg"] = True
+            opts["postprocessors"] = [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "wav",
+                    "preferredquality": "0",
+                }
+            ]
 
         return opts
 
@@ -248,3 +257,20 @@ class AudioPipelineService:
         if cookie_file and Path(cookie_file).exists():
             return cookie_file
         return None
+
+    @staticmethod
+    def _resolve_ffmpeg_path() -> Tuple[Optional[str], str]:
+        direct = shutil.which("ffmpeg")
+        if direct:
+            return direct, "system_path"
+
+        try:
+            import imageio_ffmpeg
+
+            imageio_path = imageio_ffmpeg.get_ffmpeg_exe()
+            if imageio_path and Path(imageio_path).exists():
+                return imageio_path, "imageio_ffmpeg"
+        except Exception:
+            pass
+
+        return None, "not_found"
