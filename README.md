@@ -59,7 +59,7 @@ docker-compose down
 # 의존성 설치
 npm install
 
-# 개발 서버 시작 (포트 3009)
+# 프론트 + 실제 분석 서버 시작
 npm run dev
 ```
 
@@ -74,22 +74,23 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 # 의존성 설치
 pip install -r requirements.txt
 
-# 개발 서버 시작 (포트 8000)
-python -m uvicorn main:app --reload --port 8000
+# 실제 분석 서버 시작 (포트 8002)
+python real_analysis_main.py
 ```
 
 ## 📖 사용법
 
-1. **웹 브라우저에서 `http://localhost:3009` 접속**
+1. **웹 브라우저에서 `http://localhost:3019` 접속**
 2. **유튜브 URL 입력** (예: `https://www.youtube.com/watch?v=...`)
-3. **"AI로 타브 악보 생성하기" 버튼 클릭**
-4. **분석 완료 후 타브 악보 확인 및 다운로드**
+3. **"분석 시작" 버튼 클릭**
+4. **결과가 `실제 오디오 분석 성공 / 추출 후 메타데이터 폴백 / 미리보기 분석` 중 어떤 상태인지 확인**
+5. **분석 완료 후 타브 악보 확인 및 다운로드**
 
 ## 🔧 API 사용법
 
-### 분석 요청
+### 실제 분석 요청
 ```bash
-curl -X POST "http://localhost:8000/analyze" \
+curl -X POST "http://localhost:8002/analyze" \
   -H "Content-Type: application/json" \
   -d '{"url": "https://www.youtube.com/watch?v=VIDEO_ID"}'
 ```
@@ -108,16 +109,27 @@ curl -X POST "http://localhost:8002/analyze-from-audio" \
   -d '{"audio_id": "AUDIO_ID"}'
 ```
 
-### 비동기 분석 (대용량 파일용)
+### 헬스체크
 ```bash
-# 분석 시작
-curl -X POST "http://localhost:8000/analyze-async" \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://www.youtube.com/watch?v=VIDEO_ID"}'
-
-# 상태 확인
-curl "http://localhost:8000/status/TASK_ID"
+curl "http://localhost:8002/health"
 ```
+
+### 회귀 스모크 테스트
+```bash
+npm run test:smoke:analysis
+```
+
+## 운영 메모
+
+### 환경 변수
+- `NEXT_PUBLIC_REAL_AUDIO_API_BASE`: 프론트가 호출할 실제 분석 서버 주소. 기본값 `http://localhost:8002`
+- `YTDLP_COOKIE_FILE`: 제한 영상 대응용 Netscape 형식 쿠키 파일 경로
+- `YTDLP_COOKIES_FROM_BROWSER`: 브라우저 쿠키 직접 읽기 설정. 예: `chrome`, `edge:Default`
+
+### 상태 해석
+- `audio_verified`: 실제 음원 추출과 파형 분석 성공
+- `metadata_fallback`: 추출 성공 후 오디오 분석 단계에서 폴백
+- `preview_only`: 서버 미연결 또는 실패 후 미리보기 결과
 
 ## 🎯 AI 기능
 
@@ -147,12 +159,14 @@ guitar2tabs/
 │   ├── TabViewer.tsx      # 타브 뷰어
 │   └── LoadingSpinner.tsx # 로딩 스피너
 ├── python-backend/        # Python 백엔드
-│   ├── main.py           # FastAPI 메인
+│   ├── real_analysis_main.py  # 실제 분석 API 메인
 │   └── services/         # 서비스 모듈
-│       ├── youtube_extractor.py  # 유튜브 추출
-│       ├── audio_analyzer.py     # 오디오 분석
-│       ├── ai_processor.py       # AI 처리
+│       ├── audio_pipeline.py     # 유튜브 추출/저장 파이프라인
+│       ├── youtube_extractor.py  # 레거시 추출기
+│       ├── audio_analyzer.py     # 레거시 분석기
 │       └── tab_generator.py      # 타브 생성
+├── scripts/
+│   └── smoke-real-analysis.ps1   # 회귀 스모크 테스트
 ├── docker-compose.yml     # Docker 설정
 ├── Dockerfile.frontend    # 프론트엔드 Docker
 └── README.md             # 프로젝트 문서
@@ -173,9 +187,10 @@ guitar2tabs/
 ## 🐛 문제 해결
 
 ### 일반적인 문제
-1. **포트 충돌**: `docker-compose.yml`에서 포트 변경
+1. **포트 충돌**: `3019`, `8002` 점유 프로세스를 먼저 정리
 2. **의존성 오류**: `npm install` 또는 `pip install -r requirements.txt` 재실행
-3. **Docker 오류**: `docker-compose down && docker-compose up -d` 재시작
+3. **분석 실패**: `http://localhost:8002/health`에서 `ffmpeg_available`, `librosa` 상태 확인
+4. **제한 영상 실패**: `YTDLP_COOKIE_FILE` 또는 `YTDLP_COOKIES_FROM_BROWSER` 설정
 
 ### 로그 확인
 ```bash
