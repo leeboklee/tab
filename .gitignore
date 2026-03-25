@@ -9,4 +9,6 @@ python-backend/venv/
 *.pyc
 playwright-report/
 test-results/
+backend-restart.log
+backend-restart.err
 
