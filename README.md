@@ -119,6 +119,13 @@ curl "http://localhost:8002/health"
 npm run test:smoke:analysis
 ```
 
+### 백엔드 안전 기동
+```bash
+npm run dev:backend
+```
+- 이미 `8002`에서 정상 서버가 돌고 있으면 재기동하지 않고 재사용
+- `8002`가 죽은 프로세스로 점유된 상태면 PID를 알려주고 중지
+
 ## 운영 메모
 
 ### 환경 변수
