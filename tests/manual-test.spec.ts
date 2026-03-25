@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-const APP_URL = 'http://localhost:3009'
+const APP_URL = 'http://localhost:3019'
 
 test('수동 테스트 - 유튜브 URL로 타브 생성', async ({ page }) => {
   test.setTimeout(300000) // 5분 타임아웃
@@ -87,3 +87,4 @@ test('수동 테스트 - 유튜브 URL로 타브 생성', async ({ page }) => {
     throw new Error('분석이 완료되지 않았습니다.')
   }
 })
+

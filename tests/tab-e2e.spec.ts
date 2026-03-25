@@ -1,6 +1,6 @@
-﻿import { test, expect } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 
-const APP_URL = 'http://localhost:3009'
+const APP_URL = 'http://localhost:3019'
 
 test('실제 오디오 분석 후 타브 숫자가 렌더링된다', async ({ page }) => {
   test.setTimeout(180000)
@@ -21,3 +21,4 @@ test('실제 오디오 분석 후 타브 숫자가 렌더링된다', async ({ pa
   const anyFret = page.locator('#tab-notation').locator('text=/\\b[0-9]\\b/')
   await expect(anyFret.first()).toBeVisible({ timeout: 30000 })
 })
+

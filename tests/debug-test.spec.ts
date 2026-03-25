@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-const APP_URL = 'http://localhost:3009'
+const APP_URL = 'http://localhost:3019'
 
 test('디버그 테스트 - 분석 과정 확인', async ({ page }) => {
   test.setTimeout(120000)
@@ -63,3 +63,4 @@ test('디버그 테스트 - 분석 과정 확인', async ({ page }) => {
   
   expect(analysisStarted).toBeTruthy()
 })
+

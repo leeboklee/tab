@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-const APP_URL = 'http://localhost:3009'
+const APP_URL = 'http://localhost:3019'
 
 test('페이지 내용 디버그', async ({ page }) => {
   test.setTimeout(120000)
@@ -64,3 +64,4 @@ test('페이지 내용 디버그', async ({ page }) => {
   console.log('=== 전체 페이지 텍스트 ===')
   console.log(allText)
 })
+

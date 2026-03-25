@@ -17,7 +17,7 @@ app = FastAPI(title="Guitar2Tabs Real Analysis API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3009", "http://localhost:5958", "http://localhost:3000", "http://127.0.0.1:3009"],
+    allow_origins=["http://localhost:3019", "http://localhost:5958", "http://localhost:3000", "http://127.0.0.1:3019"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -439,3 +439,4 @@ async def analyze_audio_alias(request: AnalysisRequest):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8002)
+

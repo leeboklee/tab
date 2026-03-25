@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-const APP_URL = 'http://localhost:3009'
+const APP_URL = 'http://localhost:3019'
 
 test('실제 오디오 분석 최종 테스트', async ({ page }) => {
   test.setTimeout(120000)
@@ -101,3 +101,4 @@ test('실제 오디오 분석 최종 테스트', async ({ page }) => {
   // 최종 검증
   expect(analysisCompleted).toBe(true)
 })
+

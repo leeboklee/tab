@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-const APP_URL = 'http://localhost:3009'
+const APP_URL = 'http://localhost:3019'
 
 test('타브 데이터 생성 디버깅', async ({ page }) => {
   test.setTimeout(60000)
@@ -63,3 +63,4 @@ test('타브 데이터 생성 디버깅', async ({ page }) => {
   // 스크린샷 저장
   await page.screenshot({ path: 'test-results/debug-tab-data.png', fullPage: true })
 })
+

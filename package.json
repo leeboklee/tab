@@ -3,11 +3,12 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3009",
-    "backend:run": "cd python-backend && python real_analysis_main.py",
-    "dev:all": "concurrently \"npm:dev\" \"npm:backend:run\"",
+    "dev:frontend": "next dev -p 3019",
+    "dev:backend": "cd python-backend && python real_analysis_main.py",
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:all": "npm run dev",
     "build": "next build",
-    "start": "next start -p 3009",
+    "start": "next start -p 3019",
     "lint": "next lint",
     "python:dev": "cd python-backend && python -m uvicorn main:app --reload --port 8000",
     "python:install": "cd python-backend && pip install -r requirements.txt",
@@ -45,3 +46,4 @@
     "concurrently": "^9.0.1"
   }
 }
+

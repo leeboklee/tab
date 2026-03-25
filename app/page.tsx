@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { Guitar, Music, Download, Sparkles, Play, Pause, Star, Heart, ChevronDown, ChevronUp, Zap, Brain } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -229,9 +229,18 @@ export default function Home() {
     }
   }, [analyzeMusicFromMetadata])
 
-  const handleAnalyze = useCallback(async () => {
+  const handleAnalyze = useCallback(async (urlOverride?: string | { preventDefault?: () => void }) => {
+    if (urlOverride && typeof urlOverride !== 'string' && urlOverride.preventDefault) {
+      urlOverride.preventDefault()
+    }
+
+    const targetUrl = typeof urlOverride === 'string' ? urlOverride : youtubeUrl
+    if (typeof targetUrl !== 'string') {
+      throw new Error('유효하지 않은 URL입니다.')
+    }
+
     console.log('🚀 handleAnalyze 시작')
-    console.log('📝 입력된 URL:', youtubeUrl)
+    console.log('📝 입력된 URL:', targetUrl)
     console.log('🔍 실제 분석 사용 여부:', useRealAnalysis)
     console.log('🟢 실제 분석 서버 사용 가능:', realAnalysisAvailable)
     
@@ -241,7 +250,7 @@ export default function Home() {
       setCurrentStep('analyzing')
       
       console.log('🎵 YouTube 분석 시작')
-      const videoId = extractVideoId(youtubeUrl)
+      const videoId = extractVideoId(targetUrl)
       if (!videoId) {
         throw new Error('유효하지 않은 YouTube URL입니다.')
       }
@@ -276,7 +285,7 @@ export default function Home() {
           chord_info: d.chord_info
         }
       } else {
-        analysisResult = await analyzeYouTubeVideo(youtubeUrl, videoId)
+        analysisResult = await analyzeYouTubeVideo(targetUrl, videoId)
       }
       console.log('✅ YouTube 분석 완료:', analysisResult)
       
@@ -781,6 +790,31 @@ export default function Home() {
       }
     }
   }
+
+  // 테스트/자동 실행용 URL 파라미터 처리
+  const autoAnalyzeRef = useRef(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const searchParams = new URLSearchParams(window.location.search)
+    const shouldAutoAnalyze =
+      searchParams.get('autostart') === '1' ||
+      searchParams.get('e2e') === '1' ||
+      searchParams.get('autoAnalyze') === '1'
+    const initialUrl =
+      searchParams.get('yt') ||
+      searchParams.get('url') ||
+      searchParams.get('video') ||
+      ''
+
+    if (!shouldAutoAnalyze || autoAnalyzeRef.current) return
+    if (!initialUrl.trim()) return
+
+    autoAnalyzeRef.current = true
+    setYoutubeUrl(initialUrl)
+    void handleAnalyze(initialUrl)
+  }, [handleAnalyze])
 
   // 네비게이션 핸들러들
   const handleHomeClick = () => {

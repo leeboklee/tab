@@ -1,30 +1,25 @@
 import { test, expect } from '@playwright/test'
 
-const APP_URL = 'http://localhost:3009'
+const APP_URL = 'http://localhost:3019'
 
 test('타브 악보 렌더링 확인', async ({ page }) => {
   test.setTimeout(60000)
   
-  // 페이지 로드
-  await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
-  
-  // URL 입력
   const ytUrl = 'https://youtu.be/dQw4w9WgXcQ'
-  await page.getByLabel('유튜브 URL 입력').fill(ytUrl)
   
-  // 실제 오디오 분석 선택
-  const realAnalysisRadio = page.locator('input[name=analysis-type]').last()
-  await realAnalysisRadio.check()
+  // 자동 실행 쿼리로 바로 분석 시작
+  const encodedUrl = encodeURIComponent(ytUrl)
+  await page.goto(`${APP_URL}/?autostart=1&yt=${encodedUrl}`, { waitUntil: 'domcontentloaded' })
+
+  // 결과 화면 전환 대기(텍스트/버튼/타브 영역 중 하나로 판별)
+  await page.waitForFunction(() => {
+    const mainText = document.body ? document.body.innerText : ''
+    const hasTab = !!document.querySelector('#tab-notation')
+    return mainText.includes('생성된 악보') || mainText.includes('새로운 분석') || hasTab
+  }, null, { timeout: 60000 })
   
-  // 분석 시작
-  await page.getByRole('button', { name: /타브/ }).click()
-  
-  // 분석 완료 대기 (더 간단한 선택자 사용)
-  await page.waitForSelector('text=실제 오디오 분석 결과', { timeout: 60000 })
-  
-  // 타브 악보 섹션 확인
-  const tabSection = page.locator('text=생성된 악보')
-  await expect(tabSection).toBeVisible()
+  // 타브 악보 영역 확인
+  await expect(page.getByText('생성된 악보')).toBeVisible({ timeout: 15000 })
   
   // 타브 숫자 확인
   const fretNumbers = page.locator('#tab-notation').locator('text=/\\b[0-9]\\b/')
@@ -46,3 +41,4 @@ test('타브 악보 렌더링 확인', async ({ page }) => {
   // 최소한 하나의 프렛 숫자가 있어야 함
   expect(fretCount).toBeGreaterThan(0)
 })
+

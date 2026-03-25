@@ -1,14 +1,14 @@
 {
   "components\\MIDIPlayer.tsx -> @tonejs/midi": {
-    "id": 9514,
+    "id": "components\\MIDIPlayer.tsx -> @tonejs/midi",
     "files": [
-      "static/chunks/514.5355d3c5921b8c9a.js"
+      "static/chunks/_app-pages-browser_node_modules_tonejs_midi_dist_Midi_js.js"
     ]
   },
   "components\\NotationViewer.tsx -> html2canvas": {
-    "id": 4457,
+    "id": "components\\NotationViewer.tsx -> html2canvas",
     "files": [
-      "static/chunks/ad2866b8.a1343deb0eef8820.js"
+      "static/chunks/_app-pages-browser_node_modules_html2canvas_dist_html2canvas_js.js"
     ]
   }
 }

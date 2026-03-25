@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-const APP_URL = 'http://localhost:3009'
+const APP_URL = 'http://localhost:3019'
 
 test('빠른 분석으로 타브 악보 생성 테스트', async ({ page }) => {
   test.setTimeout(120000)
@@ -96,3 +96,4 @@ test('빠른 분석으로 타브 악보 생성 테스트', async ({ page }) => {
     throw new Error('분석이 완료되지 않았습니다.')
   }
 })
+

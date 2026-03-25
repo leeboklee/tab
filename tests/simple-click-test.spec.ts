@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-const APP_URL = 'http://localhost:3009'
+const APP_URL = 'http://localhost:3019'
 
 test('간단한 클릭 테스트', async ({ page }) => {
   test.setTimeout(30000)
@@ -41,4 +41,5 @@ test('간단한 클릭 테스트', async ({ page }) => {
   // 스크린샷 저장
   await page.screenshot({ path: 'test-results/simple-click-test.png', fullPage: true })
 })
+
 

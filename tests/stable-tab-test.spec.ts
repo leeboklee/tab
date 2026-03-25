@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-const APP_URL = 'http://localhost:3009'
+const APP_URL = 'http://localhost:3019'
 
 test('안정적인 타브 악보 렌더링 확인', async ({ page }) => {
   test.setTimeout(120000)
@@ -79,3 +79,4 @@ test('안정적인 타브 악보 렌더링 확인', async ({ page }) => {
   // 최소한 하나의 프렛 숫자가 있어야 함
   expect(fretCount).toBeGreaterThan(0)
 })
+

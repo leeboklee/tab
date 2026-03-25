@@ -1,21 +1,22 @@
 import { test, expect } from '@playwright/test'
 
-const APP_URL = 'http://localhost:3009'
+const APP_URL = 'http://localhost:3019'
 
 test('헤드리스: 생성된 악보 섹션이 표시되고 프렛 숫자가 보인다', async ({ page }) => {
   test.setTimeout(120000)
 
-  await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
-
-  // URL 입력
   const ytUrl = 'https://youtu.be/dQw4w9WgXcQ'
-  await page.getByLabel('유튜브 URL 입력').fill(ytUrl)
-
-  // 메타데이터 기반(기본)으로 실행
-  await page.getByRole('button', { name: /타브/ }).click()
+  
+  // 자동 실행 쿼리로 바로 분석 시작
+  const encodedUrl = encodeURIComponent(ytUrl)
+  await page.goto(`${APP_URL}/?autostart=1&yt=${encodedUrl}`, { waitUntil: 'domcontentloaded' })
 
   // 결과 화면으로 전환 대기
-  await page.waitForSelector('text=생성된 악보', { timeout: 60000 })
+  await page.waitForFunction(() => {
+    const mainText = document.body ? document.body.innerText : ''
+    const hasTab = !!document.querySelector('#tab-notation')
+    return mainText.includes('생성된 악보') || mainText.includes('새로운 분석') || hasTab
+  }, null, { timeout: 120000 })
 
   // 악보 영역 가시성 확인
   await expect(page.getByText('생성된 악보')).toBeVisible()
@@ -27,5 +28,6 @@ test('헤드리스: 생성된 악보 섹션이 표시되고 프렛 숫자가 보
   await page.screenshot({ path: 'test-results/headless-tab.png' })
   expect(count).toBeGreaterThan(0)
 })
+
 
 

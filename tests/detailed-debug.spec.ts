@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 
-const APP_URL = 'http://localhost:3009'
+const APP_URL = 'http://localhost:3019'
 
 test('상세 디버그 - 분석 결과 데이터 확인', async ({ page }) => {
   test.setTimeout(120000)
@@ -95,3 +95,4 @@ test('상세 디버그 - 분석 결과 데이터 확인', async ({ page }) => {
     await page.screenshot({ path: 'test-results/detailed-debug-timeout.png', fullPage: true })
   }
 })
+
