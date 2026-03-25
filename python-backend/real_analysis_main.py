@@ -300,6 +300,9 @@ def _build_result_payload(record: Dict[str, Any], analysis: Dict[str, Any], anal
     seed = f"{record.get('audio_id', '')}:{record.get('source_video_id', '')}:{tempo}:{key}"
     tabs = _build_tabs(tempo=tempo, difficulty=difficulty, duration=max(60, duration), seed=seed)
     chord_progressions = analysis.get("chord_progressions") or _build_chord_progressions(key, max(60, duration), random.Random(seed))
+    fallback_applied = bool(analysis_diagnostics.get("fallback_applied"))
+    analysis_method = analysis.get("analysis_method", "unknown")
+    result_mode = "audio_verified" if analysis_method == "audio_waveform" and not fallback_applied else "metadata_fallback"
 
     return {
         "title": record.get("title", "Unknown Title"),
@@ -313,7 +316,9 @@ def _build_result_payload(record: Dict[str, Any], analysis: Dict[str, Any], anal
         "metadata": {
             "view_count": record.get("view_count", 0),
             "upload_date": record.get("upload_date", ""),
-            "analysis_method": analysis.get("analysis_method", "unknown"),
+            "analysis_method": analysis_method,
+            "result_mode": result_mode,
+            "status_summary": "실제 오디오 분석 완료" if result_mode == "audio_verified" else "추출 후 메타데이터 폴백 적용",
             "thumbnail": record.get("thumbnail", ""),
             "video_id": record.get("source_video_id", ""),
             "audio_id": record.get("audio_id", ""),

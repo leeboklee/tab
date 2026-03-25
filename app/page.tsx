@@ -51,9 +51,17 @@ interface UITabData {
     thumbnail?: string
     techniques?: string[]
     difficulty?: string
+    result_mode?: string
+    status_summary?: string
     pipeline_status?: Record<string, string>
     pipeline_diagnostics?: Record<string, unknown>
   }
+}
+
+interface AnalysisNotice {
+  mode: 'audio_verified' | 'metadata_fallback' | 'preview_only'
+  title: string
+  detail: string
 }
 
 const sectionDescriptions: Record<AppSection, string> = {
@@ -150,6 +158,8 @@ const buildFallbackAnalysis = (title: string, artist: string, videoId: string): 
       upload_date: new Date().toISOString().slice(0, 10),
       tags: ['fallback', 'preview', 'youtube'],
       analysis_method: 'metadata_preview',
+      result_mode: 'preview_only',
+      status_summary: '실제 분석 서버 없이 미리보기 분석 생성',
       video_id: videoId,
       thumbnail: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
       techniques: [difficulty === '고급' ? 'slide' : 'basic'],
@@ -191,6 +201,7 @@ export default function Home() {
   const [useRealAnalysis, setUseRealAnalysis] = useState(true)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [tabData, setTabData] = useState<UITabData | null>(null)
+  const [analysisNotice, setAnalysisNotice] = useState<AnalysisNotice | null>(null)
   const [health, setHealth] = useState<AudioHealthResponse | null>(null)
   const [healthError, setHealthError] = useState<string | null>(null)
 
@@ -246,12 +257,38 @@ export default function Home() {
       if (useRealAnalysis && pipelineReady) {
         const result = await RealAudioAPI.analyzeAudio(targetUrl)
         if (!result.success || !result.data) {
-          throw new Error(result.error || '실제 분석 응답이 비었습니다.')
+          nextData = await analyzeFromOEmbed(targetUrl)
+          setAnalysisNotice({
+            mode: 'preview_only',
+            title: '실패 후 미리보기 전환',
+            detail: result.error || '실제 분석 실패로 미리보기 결과를 대신 표시합니다.',
+          })
+          toast('실제 분석이 실패해 미리보기 결과로 전환했습니다.', { icon: '⚠️' })
+        } else {
+          nextData = result.data as UITabData
+          const resultMode = nextData.metadata?.result_mode === 'audio_verified' ? 'audio_verified' : 'metadata_fallback'
+          setAnalysisNotice({
+            mode: resultMode,
+            title: resultMode === 'audio_verified' ? '실제 오디오 분석 완료' : '추출 후 메타데이터 폴백',
+            detail:
+              nextData.metadata?.status_summary ||
+              (resultMode === 'audio_verified'
+                ? '실제 음원 추출과 파형 분석이 정상적으로 끝났습니다.'
+                : '추출은 성공했지만 오디오 분석 단계에서 폴백이 적용됐습니다.'),
+          })
+          toast(resultMode === 'audio_verified' ? '실제 분석 결과를 불러왔습니다.' : '추출은 성공했지만 메타데이터 폴백이 적용되었습니다.', {
+            icon: resultMode === 'audio_verified' ? '✅' : '⚠️',
+          })
         }
-        nextData = result.data as UITabData
-        toast('실제 분석 결과를 불러왔습니다.', { icon: '✅' })
       } else {
         nextData = await analyzeFromOEmbed(targetUrl)
+        setAnalysisNotice({
+          mode: 'preview_only',
+          title: '미리보기 분석',
+          detail: pipelineReady
+            ? '실제 분석이 꺼져 있어 미리보기 분석을 사용했습니다.'
+            : '실제 분석 서버가 준비되지 않아 미리보기 분석을 사용했습니다.',
+        })
         toast('실제 분석 서버가 준비되지 않아 미리보기 분석을 보여줍니다.', { icon: 'ℹ️' })
       }
 
@@ -270,6 +307,7 @@ export default function Home() {
   const metadataMode = tabData?.metadata?.analysis_method?.includes('metadata') || tabData?.metadata?.analysis_method?.includes('preview')
   const extractAttempts =
     (tabData?.metadata?.pipeline_diagnostics?.extract_attempts as { name?: string; status?: string; error?: string }[] | undefined) || []
+  const resultMode = analysisNotice?.mode || (tabData?.metadata?.result_mode as AnalysisNotice['mode'] | undefined) || 'preview_only'
   const notationData = tabData
     ? {
         ...tabData,
@@ -278,11 +316,17 @@ export default function Home() {
           upload_date: tabData.metadata.upload_date ?? '',
           tags: tabData.metadata.tags ?? [],
           analysis_method: tabData.metadata.analysis_method ?? 'unknown',
+          result_mode: tabData.metadata.result_mode ?? 'preview_only',
+          status_summary: tabData.metadata.status_summary ?? '',
           video_id: tabData.metadata.video_id ?? '',
           thumbnail: tabData.metadata.thumbnail,
         },
       }
     : null
+  const resultTone =
+    resultMode === 'audio_verified' ? 'text-[#8ef5b5] border-[#8ef5b5]/30 bg-[#8ef5b5]/10' : resultMode === 'metadata_fallback'
+      ? 'text-[#ffd76a] border-[#ffd76a]/30 bg-[#ffd76a]/10'
+      : 'text-[#8cc8ff] border-[#8cc8ff]/30 bg-[#8cc8ff]/10'
 
   const summaryCards = [
     {
@@ -299,7 +343,7 @@ export default function Home() {
     },
     {
       label: '현재 결과',
-      value: tabData ? `${tabData.title} / ${tabData.difficulty}` : '아직 결과 없음',
+      value: tabData ? `${tabData.title} / ${analysisNotice?.title || tabData.metadata?.status_summary || tabData.difficulty}` : '아직 결과 없음',
       tone: tabData ? 'ok' : 'idle',
       icon: ListMusic,
     },
@@ -480,7 +524,10 @@ export default function Home() {
                         <h3 className="mt-1 text-2xl font-semibold text-white">{tabData.title}</h3>
                         <p className="mt-2 text-sm text-white/60">{tabData.artist}</p>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`rounded-full border px-3 py-1 text-sm font-medium ${resultTone}`}>
+                          {analysisNotice?.title || tabData.metadata?.status_summary || '결과 상태 미확인'}
+                        </span>
                         <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm text-white/75">
                           {tabData.key}
                         </span>
@@ -513,6 +560,17 @@ export default function Home() {
                 <h3 className="text-xl font-semibold text-white">결과 신뢰도</h3>
                 {tabData ? (
                   <div className="mt-5 space-y-4">
+                    <div className={`rounded-3xl border p-5 ${resultTone}`}>
+                      <p className="text-sm opacity-70">결과 모드</p>
+                      <p className="mt-2 text-lg font-semibold">
+                        {resultMode === 'audio_verified'
+                          ? '실제 오디오 분석 성공'
+                          : resultMode === 'metadata_fallback'
+                            ? '추출 성공, 분석 폴백'
+                            : '미리보기 분석'}
+                      </p>
+                      <p className="mt-2 text-sm opacity-80">{analysisNotice?.detail || tabData.metadata.status_summary || '결과 상태 설명이 없습니다.'}</p>
+                    </div>
                     <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
                       <p className="text-sm text-white/50">분석 방식</p>
                       <p className="mt-2 text-lg font-semibold text-white">{tabData.metadata.analysis_method || 'unknown'}</p>
