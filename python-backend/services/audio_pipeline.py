@@ -29,6 +29,7 @@ class AudioPipelineService:
 
     def __init__(self, storage_root: Optional[Path] = None):
         backend_root = Path(__file__).resolve().parents[1]
+        self.backend_root = backend_root
         self.storage_root = storage_root or backend_root / "storage" / "audio"
         self.storage_root.mkdir(parents=True, exist_ok=True)
         self.ffmpeg_path, self.ffmpeg_source = self._resolve_ffmpeg_path()
@@ -42,6 +43,7 @@ class AudioPipelineService:
             "ffmpeg_source": self.ffmpeg_source,
             "storage_root": str(self.storage_root),
             "cookie_file_configured": bool(self._cookie_file_path()),
+            "cookies_from_browser_configured": bool(self._cookies_from_browser()),
         }
 
     def extract_audio(self, url: str) -> Dict[str, Any]:
@@ -105,10 +107,10 @@ class AudioPipelineService:
                 "opts": self._build_ydl_opts(work_dir),
             },
             {
-                "name": "youtube_mweb_client",
+                "name": "youtube_tv_web_clients",
                 "opts": self._build_ydl_opts(
                     work_dir,
-                    extractor_args={"youtube": {"player_client": ["mweb", "web"]}},
+                    extractor_args={"youtube": {"player_client": ["tv", "web", "mweb"]}},
                 ),
             },
         ]
@@ -122,6 +124,15 @@ class AudioPipelineService:
                 }
             )
 
+        cookies_from_browser = self._cookies_from_browser()
+        if cookies_from_browser:
+            specs.append(
+                {
+                    "name": "with_browser_cookies",
+                    "opts": self._build_ydl_opts(work_dir, cookies_from_browser=cookies_from_browser),
+                }
+            )
+
         return specs
 
     def _build_ydl_opts(
@@ -129,9 +140,10 @@ class AudioPipelineService:
         work_dir: Path,
         extractor_args: Optional[Dict[str, Any]] = None,
         cookie_file: Optional[str] = None,
+        cookies_from_browser: Optional[Tuple[str, ...]] = None,
     ) -> Dict[str, Any]:
         opts: Dict[str, Any] = {
-            "format": "bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
+            "format": "bestaudio[acodec!=none][vcodec=none]/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
             "outtmpl": str(work_dir / "%(id)s.%(ext)s"),
             "noplaylist": True,
             "quiet": True,
@@ -140,12 +152,15 @@ class AudioPipelineService:
             "fragment_retries": 3,
             "socket_timeout": 30,
             "skip_download": False,
+            "format_sort": ["hasaud", "acodec", "abr", "asr"],
         }
 
         if extractor_args:
             opts["extractor_args"] = extractor_args
         if cookie_file:
             opts["cookiefile"] = cookie_file
+        if cookies_from_browser:
+            opts["cookiesfrombrowser"] = cookies_from_browser
         if self.ffmpeg_path:
             opts["ffmpeg_location"] = self.ffmpeg_path
             opts["prefer_ffmpeg"] = True
@@ -259,10 +274,27 @@ class AudioPipelineService:
         return None
 
     @staticmethod
-    def _resolve_ffmpeg_path() -> Tuple[Optional[str], str]:
+    def _cookies_from_browser() -> Optional[Tuple[str, ...]]:
+        raw = os.getenv("YTDLP_COOKIES_FROM_BROWSER", "").strip()
+        if not raw:
+            return None
+
+        parts = tuple(part.strip() for part in raw.split(":") if part.strip())
+        return parts or None
+
+    def _resolve_ffmpeg_path(self) -> Tuple[Optional[str], str]:
         direct = shutil.which("ffmpeg")
         if direct:
             return direct, "system_path"
+
+        embedded_candidates = [
+            self.backend_root / "ffmpeg-master-latest-win64-gpl" / "bin" / "ffmpeg.exe",
+            self.backend_root / "ffmpeg" / "bin" / "ffmpeg.exe",
+            self.backend_root / "bin" / "ffmpeg.exe",
+        ]
+        for candidate in embedded_candidates:
+            if candidate.exists():
+                return str(candidate.resolve()), "repo_bundle"
 
         try:
             import imageio_ffmpeg

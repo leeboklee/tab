@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap');
 
 @layer base {
   * {
@@ -10,8 +10,16 @@
   }
   
   body {
-    @apply bg-gradient-to-br from-slate-50 to-slate-100 font-guitar;
+    @apply font-guitar text-white antialiased;
+    background:
+      radial-gradient(circle at top, rgba(255, 159, 67, 0.18), transparent 24%),
+      radial-gradient(circle at 20% 20%, rgba(72, 187, 255, 0.16), transparent 22%),
+      linear-gradient(180deg, #0b1020 0%, #07080d 100%);
     min-height: 100vh;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: 'Space Grotesk', sans-serif;
   }
 }
 
@@ -30,19 +38,19 @@
   }
   
   .btn-primary {
-    @apply bg-primary-600 hover:bg-primary-700 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl;
+    @apply rounded-2xl bg-primary-600 px-6 py-3 font-semibold text-white transition-all duration-200 shadow-lg hover:bg-primary-700 hover:shadow-xl;
   }
   
   .btn-secondary {
-    @apply bg-white hover:bg-gray-50 text-primary-700 font-semibold py-3 px-6 rounded-lg border-2 border-primary-200 transition-all duration-200;
+    @apply rounded-2xl border-2 border-primary-200 bg-white px-6 py-3 font-semibold text-primary-700 transition-all duration-200 hover:bg-gray-50;
   }
   
   .card {
-    @apply bg-white rounded-xl shadow-lg border border-gray-100 p-6;
+    @apply rounded-[28px] border border-white/10 bg-white/5 p-6 shadow-lg;
   }
   
   .input-field {
-    @apply w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200;
+    @apply w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white transition-all duration-200 focus:border-primary-500 focus:ring-2 focus:ring-primary-500;
   }
 }
 
@@ -52,15 +60,15 @@
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-gray-100;
+  @apply bg-[#0d1326];
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-primary-300 rounded-full;
+  @apply rounded-full bg-[#45557c];
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-primary-400;
+  @apply bg-[#6478ab];
 }
 
 /* Loading animation */

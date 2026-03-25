@@ -1,132 +1,81 @@
 'use client'
 
-import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Home, Search, Music, Settings, Menu, X } from 'lucide-react'
+import { Activity, FolderHeart, Music2, Radio } from 'lucide-react'
+
+export type AppSection = 'discover' | 'workspace' | 'practice' | 'library'
 
 interface NavigationProps {
-  onHomeClick: () => void
-  onSearchClick: () => void
+  activeSection: AppSection
   currentPage: 'home' | 'result'
+  onSectionChange: (section: AppSection) => void
+  pipelineStatusLabel: string
 }
 
-export default function Navigation({ onHomeClick, onSearchClick, currentPage }: NavigationProps) {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+const sectionIcons = {
+  discover: Radio,
+  workspace: Activity,
+  practice: Music2,
+  library: FolderHeart,
+}
 
-  const navItems = [
-    {
-      id: 'home',
-      label: '홈',
-      icon: <Home className="h-5 w-5" />,
-      onClick: onHomeClick,
-      active: currentPage === 'home'
-    },
-    {
-      id: 'search',
-      label: '새 검색',
-      icon: <Search className="h-5 w-5" />,
-      onClick: onSearchClick,
-      active: currentPage === 'result'
-    }
-  ]
+const sections: { id: AppSection; label: string; description: string }[] = [
+  { id: 'discover', label: '탐색', description: 'URL 입력과 진단' },
+  { id: 'workspace', label: '워크스페이스', description: '분석 결과와 탭' },
+  { id: 'practice', label: '연습도구', description: '템포·코드·재생' },
+  { id: 'library', label: '보관함', description: '즐겨찾기와 최근 흐름' },
+]
 
+export default function Navigation({
+  activeSection,
+  currentPage,
+  onSectionChange,
+  pipelineStatusLabel,
+}: NavigationProps) {
   return (
-    <nav className="bg-white/95 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* 로고 */}
-          <motion.div 
-            className="flex items-center space-x-3"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5 }}
-          >
-            <div className="p-2 bg-primary-100 rounded-lg">
-              <Music className="h-8 w-8 text-primary-600" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Guitar2Tabs</h1>
-              <p className="text-sm text-gray-600">AI 기반 유튜브 음악 분석</p>
-            </div>
-          </motion.div>
-
-          {/* 데스크톱 네비게이션 */}
-          <div className="hidden md:flex items-center space-x-1">
-            {navItems.map((item) => (
-              <motion.button
-                key={item.id}
-                onClick={item.onClick}
-                className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${
-                  item.active
-                    ? 'bg-primary-100 text-primary-700 shadow-sm'
-                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                }`}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                {item.icon}
-                <span className="font-medium">{item.label}</span>
-              </motion.button>
-            ))}
+    <nav className="sticky top-0 z-50 border-b border-white/10 bg-[rgba(9,12,20,0.86)] backdrop-blur-xl">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
+        <div className="flex items-center gap-4">
+          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#ff8a3d,#ffcf66)] shadow-[0_12px_30px_rgba(255,138,61,0.28)]">
+            <Music2 className="h-5 w-5 text-[#171717]" />
           </div>
-
-          {/* AI 표시 */}
-          <motion.div 
-            className="hidden md:flex items-center space-x-2"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-          >
-            <span className="text-sm text-gray-600">Powered by AI</span>
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-          </motion.div>
-
-          {/* 모바일 메뉴 버튼 */}
-          <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="md:hidden p-2 rounded-lg text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors duration-200"
-          >
-            {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-          </button>
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.28em] text-[#ffcf66]">TABE LAB</p>
+            <h1 className="text-lg font-semibold text-white">YouTube to Tabs Workspace</h1>
+          </div>
         </div>
 
-        {/* 모바일 메뉴 */}
-        <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ 
-            opacity: isMobileMenuOpen ? 1 : 0,
-            height: isMobileMenuOpen ? 'auto' : 0
-          }}
-          transition={{ duration: 0.3 }}
-          className="md:hidden overflow-hidden"
-        >
-          <div className="py-4 space-y-2 border-t border-gray-200">
-            {navItems.map((item) => (
+        <div className="hidden items-center gap-2 lg:flex">
+          {sections.map((section) => {
+            const Icon = sectionIcons[section.id]
+            const active = section.id === activeSection
+            return (
               <motion.button
-                key={item.id}
-                onClick={() => {
-                  item.onClick()
-                  setIsMobileMenuOpen(false)
-                }}
-                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${
-                  item.active
-                    ? 'bg-primary-100 text-primary-700'
-                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                key={section.id}
+                onClick={() => onSectionChange(section.id)}
+                className={`rounded-2xl px-4 py-3 text-left transition ${
+                  active
+                    ? 'bg-white text-[#0b1020] shadow-[0_14px_36px_rgba(255,255,255,0.18)]'
+                    : 'bg-white/5 text-white/80 hover:bg-white/10'
                 }`}
-                whileHover={{ scale: 1.02 }}
+                whileHover={{ y: -2 }}
                 whileTap={{ scale: 0.98 }}
               >
-                {item.icon}
-                <span className="font-medium">{item.label}</span>
+                <div className="flex items-center gap-2">
+                  <Icon className="h-4 w-4" />
+                  <span className="text-sm font-semibold">{section.label}</span>
+                </div>
+                <p className={`mt-1 text-xs ${active ? 'text-[#48506a]' : 'text-white/55'}`}>{section.description}</p>
               </motion.button>
-            ))}
-            
-            <div className="flex items-center justify-center pt-2">
-              <span className="text-xs text-gray-500">Powered by AI</span>
-              <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse ml-2"></div>
-            </div>
-          </div>
-        </motion.div>
+            )
+          })}
+        </div>
+
+        <div className="text-right">
+          <p className="text-[11px] uppercase tracking-[0.24em] text-white/45">Pipeline</p>
+          <p className="text-sm font-medium text-white">{pipelineStatusLabel}</p>
+          <p className="text-xs text-white/55">{currentPage === 'result' ? '결과 워크스페이스 활성' : '입력 대기'}</p>
+        </div>
       </div>
     </nav>
   )
