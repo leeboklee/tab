@@ -25,6 +25,9 @@ export interface AudioHealthResponse {
 }
 
 export class RealAudioAPI {
+  private static readonly REQUEST_TIMEOUT_MS = 45000
+  private static readonly HEALTH_TIMEOUT_MS = 5000
+
   static async analyzeAudio(url: string): Promise<AudioAnalysisResponse> {
     return this.request('/analyze', { method: 'POST', body: JSON.stringify({ url }) })
   }
@@ -42,8 +45,11 @@ export class RealAudioAPI {
   }
 
   static async getHealth(): Promise<AudioHealthResponse | null> {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), this.HEALTH_TIMEOUT_MS)
+
     try {
-      const response = await fetch(`${REAL_AUDIO_API_BASE}/health`)
+      const response = await fetch(`${REAL_AUDIO_API_BASE}/health`, { signal: controller.signal, cache: 'no-store' })
       if (!response.ok) {
         return null
       }
@@ -52,6 +58,8 @@ export class RealAudioAPI {
     } catch (error) {
       console.error('Health check failed:', error)
       return null
+    } finally {
+      window.clearTimeout(timeout)
     }
   }
 
@@ -61,11 +69,15 @@ export class RealAudioAPI {
   }
 
   private static async request(path: string, init?: RequestInit): Promise<AudioAnalysisResponse> {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), this.REQUEST_TIMEOUT_MS)
+
     try {
       const response = await fetch(`${REAL_AUDIO_API_BASE}${path}`, {
         headers: {
           'Content-Type': 'application/json',
         },
+        signal: controller.signal,
         ...init,
       })
 
@@ -80,6 +92,8 @@ export class RealAudioAPI {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
       }
+    } finally {
+      window.clearTimeout(timeout)
     }
   }
 }

@@ -17,7 +17,6 @@ import {
 import toast from 'react-hot-toast'
 
 import FavoritesManager from '@/components/FavoritesManager'
-import LoadingSpinner from '@/components/LoadingSpinner'
 import Navigation, { type AppSection } from '@/components/Navigation'
 import NotationViewer from '@/components/NotationViewer'
 import YouTubePlayer from '@/components/YouTubePlayer'
@@ -207,6 +206,7 @@ export default function Home() {
 
   useEffect(() => {
     let mounted = true
+    let interval: number | null = null
 
     const loadHealth = async () => {
       const nextHealth = await RealAudioAPI.getHealth()
@@ -223,12 +223,35 @@ export default function Home() {
       }
     }
 
-    loadHealth()
-    const interval = window.setInterval(loadHealth, 15000)
+    const startPolling = () => {
+      if (interval !== null) {
+        window.clearInterval(interval)
+      }
+
+      interval = window.setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          void loadHealth()
+        }
+      }, 30000)
+    }
+
+    void loadHealth()
+    startPolling()
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void loadHealth()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
       mounted = false
-      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      if (interval !== null) {
+        window.clearInterval(interval)
+      }
     }
   }, [])
 
@@ -415,7 +438,7 @@ export default function Home() {
                   disabled={isAnalyzing}
                   className="inline-flex min-h-[56px] items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#ff8a3d,#ffcf66)] px-5 font-semibold text-[#171717] transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-55"
                 >
-                  {isAnalyzing ? <LoadingSpinner /> : <Search className="h-5 w-5" />}
+                  {isAnalyzing ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#171717]/20 border-t-[#171717]" /> : <Search className="h-5 w-5" />}
                   <span>{isAnalyzing ? '분석 중' : '분석 시작'}</span>
                 </button>
               </div>

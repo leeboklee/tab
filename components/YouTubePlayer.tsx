@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { Play, Pause, Volume2, VolumeX } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Play, Volume2, VolumeX } from 'lucide-react'
 
 interface YouTubePlayerProps {
   url: string
@@ -20,6 +20,11 @@ export default function YouTubePlayer({ url }: YouTubePlayerProps) {
 
   const videoId = getVideoId(url)
   const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`
+
+  useEffect(() => {
+    setIsPlaying(false)
+    setIsMuted(false)
+  }, [url])
 
   if (!videoId) {
     return (
@@ -45,6 +50,7 @@ export default function YouTubePlayer({ url }: YouTubePlayerProps) {
           <img
             src={thumbnailUrl}
             alt="YouTube thumbnail"
+            loading="lazy"
             className="w-full h-full object-cover"
           />
           <div className="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center">

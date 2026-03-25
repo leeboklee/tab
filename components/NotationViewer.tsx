@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Music, Guitar, FileText, ToggleLeft, ToggleRight, Play, Pause, RotateCcw, Download } from 'lucide-react'
+import toast from 'react-hot-toast'
 import Metronome from './Metronome'
 import ChordAnalyzer from './ChordAnalyzer'
 import AchievementCelebration from './AchievementCelebration'
@@ -50,9 +51,9 @@ export default function NotationViewer({ data }: NotationViewerProps) {
   const [currentBeat, setCurrentBeat] = useState(0)
   const [playbackSpeed, setPlaybackSpeed] = useState(1)
   const [showTabNotation, setShowTabNotation] = useState(true)
-  const [audioContext, setAudioContext] = useState<AudioContext | null>(null)
   const [tempo, setTempo] = useState(data.tempo)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
 
   const notationTypes = [
     {
@@ -86,16 +87,35 @@ export default function NotationViewer({ data }: NotationViewerProps) {
   // 오디오 컨텍스트 초기화
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
-      setAudioContext(ctx)
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+      }
+
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        void audioContextRef.current.close().catch(() => undefined)
+      }
     }
   }, [])
+
+  useEffect(() => {
+    setTempo(data.tempo)
+    setCurrentBeat(0)
+    setIsPlaying(false)
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+  }, [data.tempo, data.title, data.artist])
 
   // 기타 소리 생성 함수 (오류 처리 개선)
   const generateGuitarSound = (fret: number, stringIndex: number) => {
     try {
+      const audioContext = audioContextRef.current
       if (!audioContext) {
-        console.warn('AudioContext가 초기화되지 않았습니다.')
         return
       }
 
@@ -112,7 +132,6 @@ export default function NotationViewer({ data }: NotationViewerProps) {
       
       // 인덱스 범위 확인
       if (stringIndex < 0 || stringIndex >= baseFrequencies.length) {
-        console.warn(`잘못된 stringIndex: ${stringIndex}`)
         return
       }
       
@@ -120,7 +139,6 @@ export default function NotationViewer({ data }: NotationViewerProps) {
       
       // 주파수 범위 확인 (20Hz - 20kHz)
       if (frequency < 20 || frequency > 20000) {
-        console.warn(`주파수가 범위를 벗어남: ${frequency}Hz`)
         return
       }
       
@@ -146,6 +164,7 @@ export default function NotationViewer({ data }: NotationViewerProps) {
       setIsPlaying(false)
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
+        intervalRef.current = null
       }
     } else {
       setIsPlaying(true)
@@ -158,6 +177,7 @@ export default function NotationViewer({ data }: NotationViewerProps) {
             setIsPlaying(false)
             if (intervalRef.current) {
               clearInterval(intervalRef.current)
+              intervalRef.current = null
             }
             return 0
           }
@@ -183,6 +203,7 @@ export default function NotationViewer({ data }: NotationViewerProps) {
     setIsPlaying(false)
     if (intervalRef.current) {
       clearInterval(intervalRef.current)
+      intervalRef.current = null
     }
   }
 
@@ -191,7 +212,7 @@ export default function NotationViewer({ data }: NotationViewerProps) {
     try {
       const tabElement = document.getElementById('tab-notation')
       if (!tabElement) {
-        console.error('타브 악보 요소를 찾을 수 없습니다.')
+        toast('내보낼 타브 영역을 찾지 못했습니다.', { icon: '⚠️' })
         return
       }
 
@@ -210,11 +231,10 @@ export default function NotationViewer({ data }: NotationViewerProps) {
       link.download = `${data.title || 'guitar-tab'}.jpg`
       link.href = canvas.toDataURL('image/jpeg', 0.9)
       link.click()
-      
-      console.log('JPG 다운로드가 완료되었습니다.')
+      toast('JPG 내보내기를 완료했습니다.', { icon: '🖼️' })
     } catch (error) {
       console.error('JPG 다운로드 오류:', error)
-      alert('JPG 다운로드에 실패했습니다. 다시 시도해주세요.')
+      toast('JPG 다운로드에 실패했습니다. 다시 시도해주세요.', { icon: '❌' })
     }
   }
 
@@ -223,8 +243,8 @@ export default function NotationViewer({ data }: NotationViewerProps) {
       handleDownloadJPG()
       return
     }
-    
-    console.log(`Downloading as ${format}`)
+
+    toast(`${format.toUpperCase()} 내보내기는 준비 중입니다.`, { icon: 'ℹ️' })
   }
 
   // 오선보용 음표 생성 (실제 타브 데이터 기반)
@@ -238,7 +258,6 @@ export default function NotationViewer({ data }: NotationViewerProps) {
     position: number;
   }> => {
     if (!data.tabs || data.tabs.length === 0) {
-      console.log('❌ 타브 데이터가 없습니다:', data.tabs)
       return []
     }
     
@@ -253,8 +272,6 @@ export default function NotationViewer({ data }: NotationViewerProps) {
       position: number;
     }> = []
     
-    console.log('🎼 오선보 생성 시작, 타브 데이터:', data.tabs.length, '마디')
-    
     // 타브 데이터를 기반으로 실제 음표 생성
     data.tabs.forEach((tab, measureIndex) => {
       // 각 마디에서 활성화된 프렛들을 수집
@@ -263,8 +280,6 @@ export default function NotationViewer({ data }: NotationViewerProps) {
         stringIndex,
         string: guitarStrings[stringIndex]
       })).filter(item => item.fret > 0)
-      
-      console.log(`마디 ${measureIndex + 1}: 활성 프렛 ${activeFrets.length}개`, activeFrets)
       
       // 마디별로 음표 그룹 생성
       if (activeFrets.length > 0) {
@@ -284,16 +299,12 @@ export default function NotationViewer({ data }: NotationViewerProps) {
             fret: item.fret,
             position: index * 30 // 음표 간격
           }
-          
-          console.log(`  음표 생성: ${note.note}${note.octave} (${item.string}줄 ${item.fret}프렛)`)
           return note
         })
         
         sheetNotes.push(...measureNotes)
       }
     })
-    
-    console.log('✅ 오선보 생성 완료:', sheetNotes.length, '개 음표')
     return sheetNotes.slice(0, 24) // 최대 24개 음표
   }
 
