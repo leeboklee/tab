@@ -1,7 +1,7 @@
 // 프론트엔드 API 테스트
 const fetch = require('node-fetch');
 
-const REAL_AUDIO_API_BASE = 'http://localhost:8001';
+const REAL_AUDIO_API_BASE = 'http://localhost:8002';
 
 class RealAudioAPI {
   static async analyzeAudio(url, analysisType = 'full') {

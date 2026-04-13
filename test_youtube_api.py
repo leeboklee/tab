@@ -1,89 +1,87 @@
-import requests
-import json
+import os
+import sys
 
-# API 엔드포인트 테스트
-BASE_URL = "http://localhost:8001"
+import requests
+
+# 실제 분석 API(real_analysis_main.py, 기본 포트 8002)와 맞춤
+BASE_URL = os.environ.get("REAL_AUDIO_API_BASE", "http://localhost:8002").rstrip("/")
+
 
 def test_health():
-    """서버 상태 확인"""
     try:
-        response = requests.get(f"{BASE_URL}/health")
+        response = requests.get(f"{BASE_URL}/health", timeout=10)
         print(f"Health check: {response.status_code}")
         print(response.json())
-        return True
+        return response.status_code == 200
     except Exception as e:
         print(f"Health check failed: {e}")
         return False
 
-def test_sample_audio():
-    """샘플 오디오 분석 테스트"""
+
+def test_extract_audio():
+    """POST /extract-audio — 응답 필드는 data 안에 있음 (audio_id, title, duration 등)."""
+    data = {"url": "https://www.youtube.com/watch?v=kQuxJbP6s8Y"}
+    print("Extracting audio...")
     try:
-        response = requests.post(f"{BASE_URL}/analyze-sample-audio")
-        print(f"Sample audio analysis: {response.status_code}")
-        if response.status_code == 200:
-            result = response.json()
-            print("성공!"            print(f"템포: {result['data']['tempo']:.2f} BPM")
-            print(f"키: {result['data']['key']}")
-            print(f"난이도: {result['data']['difficulty']}")
-            print(f"코드 진행 수: {len(result['data']['chord_progression'])}")
-            print(f"탭 마디 수: {len(result['data']['tabs'])}")
-        else:
-            print(f"실패: {response.text}")
+        response = requests.post(
+            f"{BASE_URL}/extract-audio",
+            json=data,
+            timeout=120,
+        )
+        print(f"extract-audio: {response.status_code}")
+        payload = response.json()
+        if not payload.get("success"):
+            print(f"실패: {payload.get('error', payload)}")
+            return
+        inner = payload.get("data") or {}
+        print(f"audio_id: {inner.get('audio_id')}")
+        print(f"title: {inner.get('title')}")
+        print(f"duration: {inner.get('duration')}s")
+        print(f"audio_path: {inner.get('audio_path')}")
     except Exception as e:
-        print(f"Sample audio test failed: {e}")
+        print(f"extract-audio failed: {e}")
 
-def test_youtube_analysis():
-    """실제 YouTube 분석 테스트"""
+
+def test_analyze():
+    """POST /analyze — 추출 + 분석 한 번에."""
+    data = {"url": "https://www.youtube.com/watch?v=kQuxJbP6s8Y"}
+    print("Full analyze...")
     try:
-        data = {
-            "url": "https://youtu.be/kQuxJbP6s8Y?si=05CIHlaApP6s8YTI",
-            "analysis_type": "full"
-        }
-
-        print("YouTube 분석 시작...")
-        response = requests.post(f"{BASE_URL}/analyze-audio",
-                               json=data,
-                               timeout=120)  # 2분 타임아웃
-
-        print(f"YouTube analysis: {response.status_code}")
-
-        if response.status_code == 200:
-            result = response.json()
-            if result['success']:
-                print("성공!")
-                print(f"처리 시간: {result['processing_time']:.2f}초")
-                analysis_data = result['data']
-
-                print(f"템포: {analysis_data['tempo']:.2f} BPM")
-                print(f"키: {analysis_data['key']}")
-                print(f"난이도: {analysis_data['difficulty']}")
-                print(f"지속시간: {analysis_data['duration']:.1f}초")
-                print(f"코드 진행 수: {len(analysis_data['chord_progression'])}")
-                print(f"탭 마디 수: {len(analysis_data['tabs'])}")
-            else:
-                print(f"분석 실패: {result['error']}")
-        else:
-            print(f"요청 실패: {response.text}")
-
+        response = requests.post(
+            f"{BASE_URL}/analyze",
+            json=data,
+            timeout=180,
+        )
+        print(f"analyze: {response.status_code}")
+        payload = response.json()
+        if not payload.get("success"):
+            print(f"실패: {payload.get('error', payload)}")
+            return
+        inner = payload.get("data") or {}
+        meta = inner.get("metadata") or {}
+        print(f"title: {inner.get('title')}")
+        print(f"tempo: {inner.get('tempo')}  key: {inner.get('key')}")
+        print(f"result_mode: {meta.get('result_mode')}  method: {meta.get('analysis_method')}")
     except requests.exceptions.Timeout:
         print("타임아웃: 분석이 너무 오래 걸립니다")
     except Exception as e:
-        print(f"YouTube analysis test failed: {e}")
+        print(f"analyze failed: {e}")
+
 
 if __name__ == "__main__":
-    print("=== 서버 테스트 시작 ===")
+    print(f"=== 서버 테스트 (BASE_URL={BASE_URL}) ===\n")
 
-    # 1. 헬스 체크
     if not test_health():
-        print("서버가 실행되지 않고 있습니다.")
-        exit(1)
+        print("서버가 실행되지 않았습니다. python-backend 에서: python real_analysis_main.py")
+        sys.exit(1)
 
-    # 2. 샘플 오디오 테스트
-    print("\n=== 샘플 오디오 분석 테스트 ===")
-    test_sample_audio()
+    print("\n=== 음원 추출만 ===")
+    test_extract_audio()
 
-    # 3. YouTube 분석 테스트
-    print("\n=== YouTube 분석 테스트 ===")
-    test_youtube_analysis()
+    print("\n=== 전체 분석(시간 오래 걸릴 수 있음) ===")
+    if os.environ.get("SKIP_ANALYZE"):
+        print("SKIP_ANALYZE=1 이므로 건너뜀")
+    else:
+        test_analyze()
 
     print("\n=== 테스트 완료 ===")

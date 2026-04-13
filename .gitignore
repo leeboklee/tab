@@ -7,6 +7,9 @@ python-backend/__pycache__/
 python-backend/storage/
 python-backend/venv/
 *.pyc
+**/__pycache__/
+frontend-dev.log
+.local-dev.log
 playwright-report/
 test-results/
 backend-restart.log

@@ -12,6 +12,7 @@
     "lint": "next lint",
     "test:smoke:analysis": "powershell -ExecutionPolicy Bypass -File scripts/smoke-real-analysis.ps1",
     "python:dev": "cd python-backend && python -m uvicorn main:app --reload --port 8000",
+    "python:real": "cd python-backend && python real_analysis_main.py",
     "python:install": "cd python-backend && pip install -r requirements.txt",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down"
