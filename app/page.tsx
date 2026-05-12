@@ -505,7 +505,7 @@ export default function Home() {
                   <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
                     <p className="text-sm text-white/50">실제 분석 서버</p>
                     <p className="mt-2 text-lg font-semibold text-white">{pipelineReady ? '정상 응답' : '연결 실패 또는 포트 충돌'}</p>
-                    <p className="mt-2 text-sm text-white/60">백엔드가 이미 떠 있는데 `npm run dev`가 다시 같은 8002 포트를 잡으면 즉시 죽습니다.</p>
+                    <p className="mt-2 text-sm text-white/60">`npm run dev:backend`는 정상 서버가 이미 떠 있으면 재사용하고, 비정상 점유만 중지 안내합니다.</p>
                   </div>
                   <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
                     <p className="text-sm text-white/50">yt-dlp / FFmpeg</p>
@@ -684,13 +684,13 @@ export default function Home() {
                 <h3 className="text-xl font-semibold text-white">지금 구조에서 남은 작업</h3>
                 <div className="mt-5 space-y-4 text-sm leading-6 text-white/72">
                   <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                    추출 성공/실패와 미리보기 폴백을 사용자에게 더 명확히 나눠 보여줘야 합니다.
+                    제한 영상 대응을 위해 쿠키 파일과 브라우저 쿠키 설정 흐름을 더 쉽게 안내해야 합니다.
                   </div>
                   <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
                     결과 워크스페이스의 세부 플레이어와 코드 분석은 별도 메뉴 페이지로 더 분리할 수 있습니다.
                   </div>
                   <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                    서버 기동 스크립트는 포트 중복 실행을 피하도록 정리해야 합니다.
+                    실제 음원 분석 결과를 기준으로 코드 진행과 주법 표시 정확도를 더 검증해야 합니다.
                   </div>
                 </div>
               </div>
