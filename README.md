@@ -36,8 +36,9 @@
 
 ### 1. 저장소 클론
 ```bash
-git clone https://github.com/your-username/guitar2tabs.git
-cd guitar2tabs
+git clone https://github.com/leeboklee/tab.git
+cd tab
+cp .env.example .env.local
 ```
 
 ### 2. Docker로 실행 (권장)
@@ -129,9 +130,25 @@ npm run dev:backend
 ## 운영 메모
 
 ### 환경 변수
+- 새 클론에서는 `.env.example`을 `.env.local`로 복사한 뒤 로컬 경로만 조정
+- 실제 쿠키 파일, 토큰, DB URL 같은 비밀값은 커밋 금지
 - `NEXT_PUBLIC_REAL_AUDIO_API_BASE`: 프론트가 호출할 실제 분석 서버 주소. 기본값 `http://localhost:8002`
+- `REAL_AUDIO_API_BASE`: CLI 테스트와 스모크 테스트가 호출할 실제 분석 서버 주소. 기본값 `http://localhost:8002`
 - `YTDLP_COOKIE_FILE`: 제한 영상 대응용 Netscape 형식 쿠키 파일 경로
 - `YTDLP_COOKIES_FROM_BROWSER`: 브라우저 쿠키 직접 읽기 설정. 예: `chrome`, `edge:Default`
+
+### 클론/환경 이관 체크
+```bash
+git clone https://github.com/leeboklee/tab.git
+cd tab
+cp .env.example .env.local
+npm install
+npm run python:install
+npm run dev
+```
+- Windows PowerShell에서는 `Copy-Item .env.example .env.local` 사용
+- 제한 영상 분석이 필요하면 `.env.local`에 `YTDLP_COOKIE_FILE` 또는 `YTDLP_COOKIES_FROM_BROWSER`만 추가
+- 이관 후 `npm run test:smoke:analysis`로 실제 분석 서버 응답 확인
 
 ### 상태 해석
 - `audio_verified`: 실제 음원 추출과 파형 분석 성공

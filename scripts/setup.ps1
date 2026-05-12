@@ -119,9 +119,10 @@ function Setup-Environment {
     if (-not (Test-Path ".env.local")) {
         @"
 # Guitar2Tabs 환경 변수
-NEXT_PUBLIC_API_URL=http://localhost:8000
-DATABASE_URL=postgresql://guitar2tabs:password@localhost:5432/guitar2tabs
-REDIS_URL=redis://localhost:6379
+NEXT_PUBLIC_REAL_AUDIO_API_BASE=http://localhost:8002
+REAL_AUDIO_API_BASE=http://localhost:8002
+# YTDLP_COOKIE_FILE=C:\path\to\cookies.txt
+# YTDLP_COOKIES_FROM_BROWSER=chrome
 NODE_ENV=development
 "@ | Out-File -FilePath ".env.local" -Encoding UTF8
         Write-Success ".env.local 파일이 생성되었습니다."

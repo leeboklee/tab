@@ -1,5 +1,8 @@
 node_modules
 .next/
+.env
+.env.*
+!.env.example
 *.exe
 *.zip
 python-backend/ffmpeg-master-latest-win64-gpl/

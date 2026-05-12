@@ -115,9 +115,10 @@ setup_env() {
     if [ ! -f ".env.local" ]; then
         cat > .env.local << EOF
 # Guitar2Tabs 환경 변수
-NEXT_PUBLIC_API_URL=http://localhost:8000
-DATABASE_URL=postgresql://guitar2tabs:password@localhost:5432/guitar2tabs
-REDIS_URL=redis://localhost:6379
+NEXT_PUBLIC_REAL_AUDIO_API_BASE=http://localhost:8002
+REAL_AUDIO_API_BASE=http://localhost:8002
+# YTDLP_COOKIE_FILE=/path/to/cookies.txt
+# YTDLP_COOKIES_FROM_BROWSER=chrome
 NODE_ENV=development
 EOF
         print_success ".env.local 파일이 생성되었습니다."
@@ -182,4 +183,3 @@ main() {
 
 # 스크립트 실행
 main "$@"
-
