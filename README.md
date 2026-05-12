@@ -150,6 +150,13 @@ npm run dev
 - 제한 영상 분석이 필요하면 `.env.local`에 `YTDLP_COOKIE_FILE` 또는 `YTDLP_COOKIES_FROM_BROWSER`만 추가
 - 이관 후 `npm run test:smoke:analysis`로 실제 분석 서버 응답 확인
 
+### D드라이브 작업 폴더 삭제 기준
+- `git status --short --branch`가 `main...origin/main`만 보여야 함
+- `git ls-files --others --exclude-standard` 결과가 비어 있어야 함
+- 새 클론에서 `.env.example`을 `.env.local`로 복사할 수 있어야 함
+- `.next`, `node_modules`, `python-backend/storage`, 로그, 테스트 결과, FFmpeg 압축 해제 폴더는 재생성 가능한 로컬 산출물이므로 Git에 올리지 않음
+- 저장된 오디오 파일이나 쿠키 파일을 보존해야 하면 삭제 전에 별도 백업
+
 ### 상태 해석
 - `audio_verified`: 실제 음원 추출과 파형 분석 성공
 - `metadata_fallback`: 추출 성공 후 오디오 분석 단계에서 폴백
