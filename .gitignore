@@ -5,6 +5,7 @@ node_modules
 !.env.example
 *.exe
 *.zip
+*.log
 python-backend/ffmpeg-master-latest-win64-gpl/
 python-backend/__pycache__/
 python-backend/storage/
