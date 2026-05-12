@@ -150,6 +150,14 @@ npm run dev
 - 제한 영상 분석이 필요하면 `.env.local`에 `YTDLP_COOKIE_FILE` 또는 `YTDLP_COOKIES_FROM_BROWSER`만 추가
 - 이관 후 `npm run test:smoke:analysis`로 실제 분석 서버 응답 확인
 
+### WSL 선행 조건
+```bash
+sudo apt update
+sudo apt install -y python3-venv python3-pip
+```
+- WSL 기본 Python에 pip/venv가 없으면 백엔드 의존성 설치가 실패함
+- 프론트만 확인할 때는 `npm ci && npm run build && npm run dev:frontend`로 충분
+
 ### D드라이브 작업 폴더 삭제 기준
 - `git status --short --branch`가 `main...origin/main`만 보여야 함
 - `git ls-files --others --exclude-standard` 결과가 비어 있어야 함
