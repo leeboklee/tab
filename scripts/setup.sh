@@ -95,7 +95,7 @@ setup_backend() {
     
     # 의존성 설치
     print_status "Python 의존성을 설치합니다..."
-    pip install --upgrade pip
+    pip install --upgrade pip setuptools wheel
     pip install -r requirements.txt
     
     if [ $? -eq 0 ]; then

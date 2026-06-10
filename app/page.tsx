@@ -52,6 +52,7 @@ interface UITabData {
     difficulty?: string
     result_mode?: string
     status_summary?: string
+    tab_source?: string
     pipeline_status?: Record<string, string>
     pipeline_diagnostics?: Record<string, unknown>
   }
@@ -330,6 +331,20 @@ export default function Home() {
   const metadataMode = tabData?.metadata?.analysis_method?.includes('metadata') || tabData?.metadata?.analysis_method?.includes('preview')
   const extractAttempts =
     (tabData?.metadata?.pipeline_diagnostics?.extract_attempts as { name?: string; status?: string; error?: string }[] | undefined) || []
+  const audioDiagnostics =
+    (tabData?.metadata?.pipeline_diagnostics?.audio_analysis as {
+      pitch_source?: string
+      pitch_tab_status?: string
+      pitch_tab_confidence?: number
+      pitch_matched_measures?: number
+      pitch_total_measures?: number
+      pitch_rendered_notes?: number
+      pitch_slot_duration?: number
+    } | undefined) || null
+  const pitchConfidence =
+    typeof audioDiagnostics?.pitch_tab_confidence === 'number'
+      ? `${Math.round(audioDiagnostics.pitch_tab_confidence * 100)}%`
+      : '--'
   const resultMode = analysisNotice?.mode || (tabData?.metadata?.result_mode as AnalysisNotice['mode'] | undefined) || 'preview_only'
   const notationData = tabData
     ? {
@@ -343,6 +358,7 @@ export default function Home() {
           status_summary: tabData.metadata.status_summary ?? '',
           video_id: tabData.metadata.video_id ?? '',
           thumbnail: tabData.metadata.thumbnail,
+          tab_source: tabData.metadata.tab_source,
         },
       }
     : null
@@ -600,6 +616,24 @@ export default function Home() {
                       <p className="mt-2 text-sm text-white/60">
                         {metadataMode ? '실제 추출 실패 또는 서버 미연결 시 생성된 미리보기 성격 결과입니다.' : '실제 음원 추출 이후 생성된 결과입니다.'}
                       </p>
+                    </div>
+                    <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
+                      <p className="text-sm text-white/50">탭 생성 근거</p>
+                      <p className="mt-2 text-lg font-semibold text-white">
+                        {tabData.metadata.tab_source === 'audio_pitch' ? '오디오 피치 기반' : tabData.metadata.tab_source || 'unknown'}
+                      </p>
+                      <p className="mt-2 text-sm text-white/60">
+                        {audioDiagnostics?.pitch_source || '피치 진단 없음'} / 신뢰도 {pitchConfidence}
+                        {typeof audioDiagnostics?.pitch_matched_measures === 'number' && typeof audioDiagnostics?.pitch_total_measures === 'number'
+                          ? ` / 매칭 ${audioDiagnostics.pitch_matched_measures}/${audioDiagnostics.pitch_total_measures}`
+                          : ''}
+                      </p>
+                      {typeof audioDiagnostics?.pitch_rendered_notes === 'number' ? (
+                        <p className="mt-1 text-sm text-white/50">
+                          표기 음 {audioDiagnostics.pitch_rendered_notes}개
+                          {typeof audioDiagnostics.pitch_slot_duration === 'number' ? ` / 단위 ${audioDiagnostics.pitch_slot_duration}s` : ''}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
                       <p className="text-sm text-white/50">추출 시도</p>

@@ -127,8 +127,8 @@ export default function NotationViewer({ data }: NotationViewerProps) {
       const oscillator = audioContext.createOscillator()
       const gainNode = audioContext.createGain()
       
-      // 기타 줄의 기본 주파수 (6번 줄부터 1번 줄까지)
-      const baseFrequencies = [82.41, 110.00, 146.83, 196.00, 246.94, 329.63] // E, A, D, G, B, E
+      // 화면 표기 순서: high E, B, G, D, A, low E
+      const baseFrequencies = [329.63, 246.94, 196.00, 146.83, 110.00, 82.41]
       
       // 인덱스 범위 확인
       if (stringIndex < 0 || stringIndex >= baseFrequencies.length) {

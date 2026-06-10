@@ -1,12 +1,19 @@
 import hashlib
 import logging
+import os
 import random
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import requests
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 from services.audio_pipeline import AudioExtractionError, AudioPipelineService
 
@@ -32,10 +39,12 @@ DIFFICULTY_ADVANCED = "\uace0\uae09"
 
 class AnalysisRequest(BaseModel):
     url: str = Field(..., description="YouTube URL")
+    quality: str = Field("balanced", description="Analysis quality: balanced, local_quality, cloud")
 
 
 class AnalyzeFromAudioRequest(BaseModel):
     audio_id: str = Field(..., description="Saved audio identifier")
+    quality: str = Field("balanced", description="Analysis quality: balanced, local_quality")
 
 
 class ApiResponse(BaseModel):
@@ -61,6 +70,54 @@ def _analysis_dependency_status() -> Dict[str, Any]:
         pass
 
     return status
+
+
+def _cloud_analysis_status() -> Dict[str, Any]:
+    return {
+        "configured": bool(os.getenv("CLOUD_ANALYSIS_API_BASE", "").strip()),
+        "quality_endpoint": os.getenv("CLOUD_ANALYSIS_API_BASE", "").strip(),
+        "api_key_configured": bool(os.getenv("CLOUD_ANALYSIS_API_KEY", "").strip()),
+    }
+
+
+def _high_quality_status() -> Dict[str, Any]:
+    try:
+        import demucs  # noqa: F401
+        import torch
+
+        return {
+            "demucs_available": True,
+            "torch_available": True,
+            "cuda_available": bool(torch.cuda.is_available()),
+            "device": os.getenv("DEMUCS_DEVICE", "cuda" if torch.cuda.is_available() else "cpu"),
+            "model": os.getenv("DEMUCS_MODEL", "htdemucs_6s"),
+        }
+    except Exception as exc:
+        return {
+            "demucs_available": False,
+            "torch_available": False,
+            "cuda_available": False,
+            "device": "unavailable",
+            "model": os.getenv("DEMUCS_MODEL", "htdemucs_6s"),
+            "error": str(exc),
+        }
+
+
+def _forward_to_cloud_analysis(request: AnalysisRequest) -> Optional[Dict[str, Any]]:
+    base_url = os.getenv("CLOUD_ANALYSIS_API_BASE", "").strip().rstrip("/")
+    if not base_url:
+        return None
+
+    headers = {"Content-Type": "application/json"}
+    api_key = os.getenv("CLOUD_ANALYSIS_API_KEY", "").strip()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    timeout = int(os.getenv("CLOUD_ANALYSIS_TIMEOUT_SEC", "900"))
+    payload = {"url": request.url, "quality": "local_quality"}
+    response = requests.post(f"{base_url}/analyze", json=payload, headers=headers, timeout=timeout)
+    response.raise_for_status()
+    return response.json()
 
 
 def _normalize_tempo(raw_tempo: Any) -> int:
@@ -93,14 +150,17 @@ def _estimate_chords(chroma: Any, sr: int, hop_length: int) -> List[Dict[str, An
     try:
         import numpy as np
 
-        templates = {
-            "C": np.array([1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0], dtype=float),
-            "Dm": np.array([1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0], dtype=float),
-            "Em": np.array([0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0], dtype=float),
-            "F": np.array([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], dtype=float),
-            "G": np.array([0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1], dtype=float),
-            "Am": np.array([1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0], dtype=float),
-        }
+        note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+        templates = {}
+        for root_idx, root_name in enumerate(note_names):
+            major = np.zeros(12, dtype=float)
+            minor = np.zeros(12, dtype=float)
+            for interval in (0, 4, 7):
+                major[(root_idx + interval) % 12] = 1.0
+            for interval in (0, 3, 7):
+                minor[(root_idx + interval) % 12] = 1.0
+            templates[root_name] = major
+            templates[f"{root_name}m"] = minor
 
         segment_frames = 96
         max_segments = 12
@@ -115,7 +175,9 @@ def _estimate_chords(chroma: Any, sr: int, hop_length: int) -> List[Dict[str, An
             best_chord = "C"
             best_score = -1.0
             for chord, template in templates.items():
-                score = float(np.dot(segment, template))
+                template_norm = template / max(float(np.linalg.norm(template)), 1e-9)
+                segment_norm = segment / max(float(np.linalg.norm(segment)), 1e-9)
+                score = float(np.dot(segment_norm, template_norm))
                 if score > best_score:
                     best_score = score
                     best_chord = chord
@@ -126,7 +188,7 @@ def _estimate_chords(chroma: Any, sr: int, hop_length: int) -> List[Dict[str, An
                     "chord": best_chord,
                     "start_time": round(start_time, 2),
                     "duration": round(duration, 2),
-                    "confidence": round(max(0.2, min(0.99, best_score / 6.0)), 3),
+                    "confidence": round(max(0.2, min(0.99, best_score)), 3),
                 }
             )
 
@@ -151,7 +213,204 @@ def _estimate_difficulty(tempo: int, onset_density: float, avg_centroid: float) 
     return DIFFICULTY_ADVANCED
 
 
-def _analyze_audio_waveform(audio_path: str) -> Tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
+def _midi_to_guitar_position(midi_note: int) -> Optional[Dict[str, int]]:
+    # UI order: high E, B, G, D, A, low E.
+    open_string_midis = [64, 59, 55, 50, 45, 40]
+    candidates = []
+    for string_index, open_midi in enumerate(open_string_midis):
+        fret = midi_note - open_midi
+        if 0 <= fret <= 20:
+            candidates.append((string_index, fret))
+
+    if not candidates:
+        return None
+
+    non_open_candidates = [candidate for candidate in candidates if candidate[1] > 0]
+    visible_candidates = non_open_candidates or candidates
+    string_index, fret = min(visible_candidates, key=lambda item: (item[1] > 12, item[1], abs(item[0] - 2)))
+    return {"string_index": string_index, "fret": fret}
+
+
+def _estimate_pitch_tabs(y: Any, sr: int, tempo: int, duration: float) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    try:
+        import librosa
+        import numpy as np
+
+        hop_length = 1024
+        harmonic_y, _ = librosa.effects.hpss(y)
+        source_y = harmonic_y if len(harmonic_y) else y
+        beat_duration = 60.0 / max(tempo, 60)
+        slot_duration = max(beat_duration * 2, 0.5)
+        total_slots = max(8, min(128, int(duration / slot_duration)))
+
+        f0 = librosa.yin(
+            source_y,
+            fmin=librosa.note_to_hz("E2"),
+            fmax=librosa.note_to_hz("E6"),
+            sr=sr,
+            frame_length=2048,
+            hop_length=hop_length,
+        )
+        frame_times = librosa.frames_to_time(np.arange(len(f0)), sr=sr, hop_length=hop_length)
+        rms = librosa.feature.rms(y=source_y, frame_length=2048, hop_length=hop_length)[0]
+        rms = rms[: len(f0)]
+        energy_floor = float(np.percentile(rms, 35)) if len(rms) else 0.0
+        valid_mask = np.isfinite(f0) & (f0 > 0) & (rms > energy_floor)
+
+        tabs: List[Dict[str, Any]] = []
+        matched_slots = 0
+        rendered_notes = 0
+
+        for slot_idx in range(total_slots):
+            start = slot_idx * slot_duration
+            end = start + slot_duration
+            segment_mask = valid_mask & (frame_times >= start) & (frame_times < end)
+            segment_pitches = f0[segment_mask]
+            segment_rms = rms[segment_mask]
+
+            frets = [0, 0, 0, 0, 0, 0]
+            if len(segment_pitches) > 0:
+                midi_values = np.rint(librosa.hz_to_midi(segment_pitches)).astype(int)
+                unique, inverse = np.unique(midi_values, return_inverse=True)
+                weighted_counts = np.bincount(inverse, weights=segment_rms if len(segment_rms) else None)
+                ranked_notes = sorted(zip(unique.tolist(), weighted_counts.tolist()), key=lambda item: item[1], reverse=True)
+
+                used_strings = set()
+                for midi_note, _count in ranked_notes[:4]:
+                    position = _midi_to_guitar_position(int(midi_note))
+                    if not position:
+                        continue
+                    string_index = position["string_index"]
+                    if string_index in used_strings:
+                        continue
+                    frets[string_index] = position["fret"]
+                    used_strings.add(string_index)
+                    rendered_notes += 1
+                    if len(used_strings) >= 1:
+                        break
+
+                if used_strings:
+                    matched_slots += 1
+
+            tabs.append(
+                {
+                    "measure": slot_idx + 1,
+                    "frets": frets,
+                    "notes": ["E", "B", "G", "D", "A", "E"],
+                    "technique": "pitch_hpss",
+                    "start_time": round(start, 2),
+                    "duration": round(slot_duration, 2),
+                }
+            )
+
+        confidence = matched_slots / max(total_slots, 1)
+        return tabs, {
+            "pitch_tab_status": "ok",
+            "pitch_source": "harmonic_hpss_yin",
+            "pitch_matched_measures": matched_slots,
+            "pitch_total_measures": total_slots,
+            "pitch_tab_confidence": round(confidence, 3),
+            "pitch_rendered_notes": rendered_notes,
+            "pitch_slot_duration": round(slot_duration, 3),
+        }
+    except Exception as exc:
+        return [], {
+            "pitch_tab_status": "failed",
+            "reason": "pitch_to_tab_error",
+            "detail": str(exc),
+        }
+
+
+def _extract_demucs_guitar_stem(audio_path: str, max_duration: int = 90) -> Tuple[Optional[str], Dict[str, Any]]:
+    status = _high_quality_status()
+    if not status.get("demucs_available"):
+        return None, {
+            "stem_separation_status": "unavailable",
+            "reason": "missing_demucs",
+            "detail": status.get("error", ""),
+        }
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="tabe-demucs-") as temp_dir:
+            temp_path = Path(temp_dir)
+            clip_path = temp_path / "input.wav"
+            out_dir = temp_path / "separated"
+            ffmpeg_cmd = [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                audio_path,
+                "-t",
+                str(max_duration),
+                "-ar",
+                "44100",
+                "-ac",
+                "2",
+                str(clip_path),
+            ]
+            subprocess.run(ffmpeg_cmd, check=True, capture_output=True, text=True)
+
+            model = os.getenv("DEMUCS_MODEL", "htdemucs_6s")
+            device = os.getenv("DEMUCS_DEVICE", str(status.get("device") or "cpu"))
+            demucs_cmd = [
+                sys.executable,
+                "-m",
+                "demucs.separate",
+                "-n",
+                model,
+                "--device",
+                device,
+                "--jobs",
+                "0",
+                "--shifts",
+                "1",
+                "--segment",
+                os.getenv("DEMUCS_SEGMENT", "10"),
+                "--out",
+                str(out_dir),
+                str(clip_path),
+            ]
+            subprocess.run(demucs_cmd, check=True, capture_output=True, text=True, timeout=int(os.getenv("DEMUCS_TIMEOUT_SEC", "900")))
+
+            stem_candidates = sorted(out_dir.glob(f"{model}/input/guitar.wav"))
+            if not stem_candidates:
+                stem_candidates = sorted(out_dir.glob("*/input/other.wav"))
+            if not stem_candidates:
+                return None, {
+                    "stem_separation_status": "failed",
+                    "reason": "stem_file_not_found",
+                    "model": model,
+                    "device": device,
+                }
+
+            final_path = Path(audio_path).with_name(f"{Path(audio_path).stem}.guitar-stem.wav")
+            final_path.write_bytes(stem_candidates[0].read_bytes())
+            return str(final_path), {
+                "stem_separation_status": "ok",
+                "stem_source": "guitar" if stem_candidates[0].name == "guitar.wav" else "other",
+                "stem_path": str(final_path),
+                "model": model,
+                "device": device,
+                "duration_limit_sec": max_duration,
+            }
+    except subprocess.TimeoutExpired as exc:
+        return None, {
+            "stem_separation_status": "failed",
+            "reason": "demucs_timeout",
+            "detail": str(exc),
+        }
+    except Exception as exc:
+        return None, {
+            "stem_separation_status": "failed",
+            "reason": "demucs_error",
+            "detail": str(exc),
+        }
+
+
+def _analyze_audio_waveform(audio_path: str, quality: str = "balanced") -> Tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
     try:
         import librosa
         import numpy as np
@@ -163,8 +422,15 @@ def _analyze_audio_waveform(audio_path: str) -> Tuple[Optional[Dict[str, Any]], 
         }
 
     try:
+        source_path = audio_path
+        stem_diag: Dict[str, Any] = {"stem_separation_status": "not_requested"}
+        if quality == "local_quality":
+            stem_path, stem_diag = _extract_demucs_guitar_stem(audio_path)
+            if stem_path:
+                source_path = stem_path
+
         hop_length = 1024
-        y, sr = librosa.load(audio_path, sr=16000, mono=True, duration=90)
+        y, sr = librosa.load(source_path, sr=16000, mono=True, duration=90)
         if y is None or len(y) == 0:
             raise RuntimeError("empty audio signal")
 
@@ -184,6 +450,7 @@ def _analyze_audio_waveform(audio_path: str) -> Tuple[Optional[Dict[str, Any]], 
         avg_centroid = float(np.mean(centroid)) if centroid.size else 0.0
         difficulty = _estimate_difficulty(tempo, onset_density, avg_centroid)
         chords = _estimate_chords(chroma, sr, hop_length)
+        tabs, pitch_diag = _estimate_pitch_tabs(y, sr, tempo, duration)
 
         return (
             {
@@ -192,12 +459,16 @@ def _analyze_audio_waveform(audio_path: str) -> Tuple[Optional[Dict[str, Any]], 
                 "difficulty": difficulty,
                 "duration": int(round(duration)),
                 "chord_progressions": chords,
+                "tabs": tabs,
                 "analysis_method": "audio_waveform",
             },
             {
                 "audio_analysis_status": "ok",
+                "analysis_quality": quality,
                 "onset_density": round(onset_density, 3),
                 "spectral_centroid": round(avg_centroid, 2),
+                **stem_diag,
+                **pitch_diag,
             },
         )
     except Exception as exc:
@@ -298,7 +569,8 @@ def _build_result_payload(record: Dict[str, Any], analysis: Dict[str, Any], anal
     duration = int(analysis.get("duration") or record.get("duration") or 0)
 
     seed = f"{record.get('audio_id', '')}:{record.get('source_video_id', '')}:{tempo}:{key}"
-    tabs = _build_tabs(tempo=tempo, difficulty=difficulty, duration=max(60, duration), seed=seed)
+    analysis_tabs = analysis.get("tabs") if isinstance(analysis.get("tabs"), list) else []
+    tabs = analysis_tabs or _build_tabs(tempo=tempo, difficulty=difficulty, duration=max(60, duration), seed=seed)
     chord_progressions = analysis.get("chord_progressions") or _build_chord_progressions(key, max(60, duration), random.Random(seed))
     fallback_applied = bool(analysis_diagnostics.get("fallback_applied"))
     analysis_method = analysis.get("analysis_method", "unknown")
@@ -330,6 +602,7 @@ def _build_result_payload(record: Dict[str, Any], analysis: Dict[str, Any], anal
                 "audio_analysis": analysis_diagnostics.get("audio_analysis_status", "unknown"),
                 "tab_generation": "ok",
             },
+            "tab_source": "audio_pitch" if analysis_tabs else "fallback_pattern",
             "pipeline_diagnostics": {
                 "extract_attempts": record.get("attempts", []),
                 "extract_runtime": record.get("diagnostics", {}),
@@ -339,12 +612,12 @@ def _build_result_payload(record: Dict[str, Any], analysis: Dict[str, Any], anal
     }
 
 
-def _analyze_record(record: Dict[str, Any]) -> Dict[str, Any]:
+def _analyze_record(record: Dict[str, Any], quality: str = "balanced") -> Dict[str, Any]:
     audio_path = record.get("audio_path")
     if not audio_path:
         raise RuntimeError("Saved audio path is missing")
 
-    analysis, audio_diag = _analyze_audio_waveform(audio_path)
+    analysis, audio_diag = _analyze_audio_waveform(audio_path, quality=quality)
     if analysis is None:
         analysis = _build_fallback_analysis(record)
         audio_diag = {
@@ -370,6 +643,8 @@ async def health_check():
         "services": {
             "audio_pipeline": pipeline.diagnostics(),
             "audio_analysis_deps": _analysis_dependency_status(),
+            "cloud_analysis": _cloud_analysis_status(),
+            "high_quality": _high_quality_status(),
         },
     }
 
@@ -382,6 +657,8 @@ async def test_audio_analysis():
             "message": "Audio analysis diagnostics",
             "pipeline": pipeline.diagnostics(),
             "analysis_dependencies": _analysis_dependency_status(),
+            "cloud_analysis": _cloud_analysis_status(),
+            "high_quality": _high_quality_status(),
         },
     )
 
@@ -389,7 +666,7 @@ async def test_audio_analysis():
 @app.post("/extract-audio", response_model=ApiResponse)
 async def extract_audio(request: AnalysisRequest):
     try:
-        record = pipeline.extract_audio(request.url)
+        record = await run_in_threadpool(pipeline.extract_audio, request.url)
         return ApiResponse(success=True, data=record)
     except AudioExtractionError as exc:
         logger.error("Audio extraction failed: %s", exc)
@@ -412,7 +689,8 @@ async def get_audio_record(audio_id: str):
 async def analyze_from_audio(request: AnalyzeFromAudioRequest):
     try:
         record = pipeline.load_record(request.audio_id)
-        data = _analyze_record(record)
+        quality = "local_quality" if request.quality == "local_quality" else "balanced"
+        data = await run_in_threadpool(_analyze_record, record, quality)
         return ApiResponse(success=True, data=data)
     except Exception as exc:
         logger.error("Analyze-from-audio failed: %s", exc)
@@ -422,8 +700,14 @@ async def analyze_from_audio(request: AnalyzeFromAudioRequest):
 @app.post("/analyze", response_model=ApiResponse)
 async def analyze_music(request: AnalysisRequest):
     try:
-        record = pipeline.extract_audio(request.url)
-        data = _analyze_record(record)
+        if request.quality == "cloud":
+            cloud_response = await run_in_threadpool(_forward_to_cloud_analysis, request)
+            if cloud_response is not None:
+                return cloud_response
+
+        record = await run_in_threadpool(pipeline.extract_audio, request.url)
+        quality = "local_quality" if request.quality == "local_quality" else "balanced"
+        data = await run_in_threadpool(_analyze_record, record, quality)
         return ApiResponse(success=True, data=data)
     except AudioExtractionError as exc:
         logger.error("Analyze failed at extraction stage: %s", exc)
@@ -444,4 +728,3 @@ async def analyze_audio_alias(request: AnalysisRequest):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8002)
-

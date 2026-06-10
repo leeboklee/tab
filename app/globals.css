@@ -80,3 +80,17 @@
 .guitar-strum {
   animation: guitar-strum 0.5s ease-in-out;
 }
+
+/* Custom spin-slow and spin-reverse animations */
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 20s linear infinite;
+}
+
+.animate-spin-reverse {
+  animation: spin-slow 10s linear infinite reverse;
+}

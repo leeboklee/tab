@@ -21,23 +21,33 @@ export interface AudioHealthResponse {
       librosa?: boolean
       numpy?: boolean
     }
+    cloud_analysis?: {
+      configured?: boolean
+      api_key_configured?: boolean
+    }
+    high_quality?: {
+      demucs_available?: boolean
+      cuda_available?: boolean
+      device?: string
+      model?: string
+    }
   }
 }
 
 export class RealAudioAPI {
-  private static readonly REQUEST_TIMEOUT_MS = 45000
+  private static readonly REQUEST_TIMEOUT_MS = 180000
   private static readonly HEALTH_TIMEOUT_MS = 5000
 
-  static async analyzeAudio(url: string): Promise<AudioAnalysisResponse> {
-    return this.request('/analyze', { method: 'POST', body: JSON.stringify({ url }) })
+  static async analyzeAudio(url: string, quality: 'balanced' | 'cloud' = 'balanced'): Promise<AudioAnalysisResponse> {
+    return this.request('/analyze', { method: 'POST', body: JSON.stringify({ url, quality }) })
   }
 
   static async extractAudio(url: string): Promise<AudioAnalysisResponse> {
     return this.request('/extract-audio', { method: 'POST', body: JSON.stringify({ url }) })
   }
 
-  static async analyzeFromAudio(audioId: string): Promise<AudioAnalysisResponse> {
-    return this.request('/analyze-from-audio', { method: 'POST', body: JSON.stringify({ audio_id: audioId }) })
+  static async analyzeFromAudio(audioId: string, quality: 'balanced' | 'local_quality' = 'balanced'): Promise<AudioAnalysisResponse> {
+    return this.request('/analyze-from-audio', { method: 'POST', body: JSON.stringify({ audio_id: audioId, quality }) })
   }
 
   static async testAudioAnalysis(): Promise<AudioAnalysisResponse> {
