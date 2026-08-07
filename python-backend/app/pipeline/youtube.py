@@ -11,6 +11,7 @@ import logging
 import shutil
 import time
 import uuid
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -19,6 +20,68 @@ import yt_dlp
 logger = logging.getLogger(__name__)
 
 AUDIO_EXTENSIONS = (".wav", ".mp3", ".m4a", ".webm", ".ogg", ".opus", ".aac", ".flac")
+
+# 실패 메시지에서 원인을 대충 분류하기 위한 키워드.
+# YouTube 봇 감지(PO Token 필요)와 네트워크/프록시 차단은 해결책이 완전히 다르므로
+# 구분해서 알려준다.
+_BOT_DETECTION_MARKERS = (
+    "sign in to confirm",
+    "not a bot",
+    "requested format is not available",
+    "po_token",
+    "potoken",
+)
+_NETWORK_BLOCK_MARKERS = (
+    "unable to connect to proxy",
+    "tunnel connection failed",
+    "connection refused",
+    "name or service not known",
+    "network is unreachable",
+)
+
+
+def pot_provider_installed() -> bool:
+    """yt-dlp 봇 감지 우회용 PO Token provider 플러그인 설치 여부.
+
+    https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide 참고.
+    설치돼 있어도 HTTP 서버(기본 4416 포트)가 떠 있어야 실제로 작동한다.
+    """
+    try:
+        importlib_metadata.version("bgutil-ytdlp-pot-provider")
+        return True
+    except importlib_metadata.PackageNotFoundError:
+        return False
+
+
+def classify_extraction_failure(attempts: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """시도별 에러 메시지에서 원인을 추정하고, 해결 힌트를 함께 준다."""
+    combined = " ".join(str(a.get("error", "")) for a in attempts).lower()
+
+    if any(marker in combined for marker in _NETWORK_BLOCK_MARKERS):
+        return {
+            "category": "network_blocked",
+            "hint": (
+                "이 프로세스에서 youtube.com 으로 나가는 연결 자체가 막혀 있습니다. "
+                "샌드박스/방화벽/프록시 정책 문제이므로 코드로 해결할 수 없고, "
+                "네트워크 제약이 없는 환경(로컬 PC, 일반 서버)에서 실행해야 합니다."
+            ),
+        }
+
+    if any(marker in combined for marker in _BOT_DETECTION_MARKERS):
+        return {
+            "category": "bot_detection",
+            "hint": (
+                "YouTube가 봇으로 판단해 차단했습니다. "
+                "bgutil-ytdlp-pot-provider(PO Token 플러그인)를 설치하고 "
+                "HTTP 서버를 띄우거나, YTDLP_COOKIE_FILE / YTDLP_COOKIES_FROM_BROWSER 로 "
+                "로그인 쿠키를 제공하면 성공률이 크게 오릅니다."
+            ),
+        }
+
+    return {
+        "category": "unknown",
+        "hint": "attempts의 error 메시지를 직접 확인하세요.",
+    }
 
 
 class AudioExtractionError(RuntimeError):
@@ -52,6 +115,7 @@ class YouTubeExtractor:
             "storage_root": str(self.storage_root),
             "cookie_file_configured": bool(self._cookie_file()),
             "cookies_from_browser_configured": bool(self._browser_cookies()),
+            "pot_provider_installed": pot_provider_installed(),
         }
 
     # ------------------------------------------------------------------ 공개 API
@@ -85,7 +149,8 @@ class YouTubeExtractor:
                 logger.warning("Extraction attempt failed (%s): %s", spec["name"], exc)
 
         if not info or not audio_path:
-            diagnostics = {**self.diagnostics(), "attempts": attempts}
+            failure = classify_extraction_failure(attempts)
+            diagnostics = {**self.diagnostics(), "attempts": attempts, "failure": failure}
             self._write_json(work_dir / "metadata.json", {
                 "audio_id": extraction_id,
                 "source_url": url,
@@ -93,7 +158,10 @@ class YouTubeExtractor:
                 "diagnostics": diagnostics,
                 "extracted_at": _utc_now(),
             })
-            raise AudioExtractionError("Failed to extract audio from YouTube", diagnostics=diagnostics)
+            raise AudioExtractionError(
+                f"Failed to extract audio from YouTube ({failure['category']}): {failure['hint']}",
+                diagnostics=diagnostics,
+            )
 
         record = self._build_record(url, extraction_id, info, audio_path, attempts)
         self._write_json(work_dir / "metadata.json", record)
@@ -118,6 +186,17 @@ class YouTubeExtractor:
                 ),
             },
         ]
+
+        if pot_provider_installed():
+            # PO Token provider(예: bgutil-ytdlp-pot-provider)가 설치돼 있으면
+            # yt-dlp가 plugin 시스템으로 자동 인식해 토큰을 붙인다.
+            # mweb 클라이언트가 현재 봇 감지에 가장 강하다는 것이 yt-dlp wiki 권고.
+            specs.append(
+                {
+                    "name": "mweb_with_pot_provider",
+                    "opts": self._ydl_opts(work_dir, extractor_args={"youtube": {"player_client": ["mweb"]}}),
+                }
+            )
 
         cookie_file = self._cookie_file()
         if cookie_file:

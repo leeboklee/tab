@@ -253,6 +253,16 @@ guitar2tabs/
 채보로 자동 전환된다. `/health`, `/capabilities` 엔드포인트에서 현재 어떤
 엔진이 켜져 있는지 확인할 수 있다.
 
+### 검토했지만 채택하지 않은 것: 기타 전용 채보 모델
+
+Basic Pitch는 범용 다성 채보 모델이라 "이 음을 어느 줄 몇 프렛으로 눌러야
+연주 가능한가"는 별도로 풀어야 한다(`fretboard.py`). TabCNN/FretNet(CRNN,
+문자열별 프렛 위치를 직접 예측)이나 SynthTab 같은 기타 전용 모델은 원리상
+더 정확할 수 있어 검토했지만, **공개된 사전학습 가중치가 없다** — GuitarSet
+데이터셋으로 직접 학습시켜야 쓸 수 있는 연구용 코드였다. 학습 인프라 없이
+당장 갈아끼울 수 있는 게 아니라서 채택하지 않았다. 나중에 정확도를 더
+올리고 싶다면 이 방향이 다음 후보다.
+
 ## 🛠️ 개발 가이드
 
 ### 새로운 기능 추가
@@ -272,6 +282,28 @@ guitar2tabs/
 2. **의존성 오류**: `npm install` 또는 `pip install -r requirements.txt` 재실행
 3. **분석 실패**: `http://localhost:8002/health`에서 `ffmpeg_available`, `librosa` 상태 확인
 4. **제한 영상 실패**: `YTDLP_COOKIE_FILE` 또는 `YTDLP_COOKIES_FROM_BROWSER` 설정
+
+### 유튜브 추출이 계속 실패할 때
+
+`extract-audio`/`analyze` 응답의 `diagnostics.failure.category`로 원인이 둘 중
+무엇인지 구분된다.
+
+- **`network_blocked`**: 이 서버에서 `youtube.com`으로 나가는 연결 자체가 막힌
+  경우 (사내망, 컨테이너 방화벽, 클라우드 샌드박스의 아웃바운드 정책 등). 코드로
+  해결할 수 없다 — 네트워크 제약이 없는 환경에서 실행해야 한다.
+- **`bot_detection`**: YouTube가 "Sign in to confirm you're not a bot"으로
+  막는 경우. yt-dlp 자체 문제가 아니라 2024년 이후 YouTube가 강화한 PO Token
+  검증 때문이며, 다음 두 방법으로 성공률을 크게 올릴 수 있다.
+  1. **PO Token provider 설치** (권장):
+     ```bash
+     pip install -r requirements-hq.txt   # bgutil-ytdlp-pot-provider 포함
+     docker run --name bgutil-provider -d --init -p 4416:4416 \
+       brainicism/bgutil-ytdlp-pot-provider
+     ```
+     설치와 서버 기동만 하면 yt-dlp가 플러그인을 자동 인식해서 별도 설정 없이
+     토큰을 붙인다. `/health`의 `pot_provider_installed` 값으로 설치 여부 확인 가능.
+  2. **로그인 쿠키 사용**: `YTDLP_COOKIE_FILE`(Netscape 형식 쿠키 파일) 또는
+     `YTDLP_COOKIES_FROM_BROWSER`(`chrome`, `edge:Default` 등)를 설정.
 
 ### 로그 확인
 ```bash

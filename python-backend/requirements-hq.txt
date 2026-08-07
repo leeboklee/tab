@@ -18,3 +18,7 @@ demucs>=4.0.1
 
 # MusicXML 내보내기 (선택).
 music21>=9.1.0
+
+# YouTube 봇 감지(PO Token) 우회. 설치만으로는 부족하고 HTTP 서버가 떠 있어야
+# 실제로 작동한다 (README의 "유튜브 추출이 계속 실패할 때" 참고).
+bgutil-ytdlp-pot-provider>=1.0.0
