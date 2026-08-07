@@ -1,0 +1,20 @@
+# 고품질 모드: 다성 채보(Basic Pitch) + 기타 스템 분리(Demucs).
+# requirements.txt 설치 후 이 파일을 추가로 설치한다.
+#   pip install -r requirements.txt -r requirements-hq.txt
+#
+# torch 는 무겁고(수백MB~GB) GPU 유무에 따라 설치 방법이 갈리므로
+# 기본 requirements 에서 분리했다. CPU 전용이면 아래 그대로 설치해도 되고,
+# CUDA를 쓰려면 https://pytorch.org 안내에 맞는 인덱스로 먼저 설치한 뒤
+# 이 파일을 설치한다.
+
+torch>=2.2,<3.0
+torchaudio>=2.2,<3.0
+
+# Spotify Basic Pitch: CNN 기반 다성(polyphonic) 음정 채보. Apache-2.0.
+basic-pitch>=0.4.0
+
+# Meta Demucs: 소스 분리(보컬/드럼/베이스/기타/피아노/기타악기). MIT.
+demucs>=4.0.1
+
+# MusicXML 내보내기 (선택).
+music21>=9.1.0

@@ -72,11 +72,14 @@ cd python-backend
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 
-# 의존성 설치
+# 기본 의존성 설치 (yt-dlp + librosa 폴백 채보, torch 불필요)
 pip install -r requirements.txt
 
-# 실제 분석 서버 시작 (포트 8002)
-python real_analysis_main.py
+# 고품질 모드까지 원하면 추가 설치 (Basic Pitch 다성 채보 + Demucs 스템 분리)
+pip install -r requirements-hq.txt
+
+# 분석 서버 시작 (포트 8002)
+python -m app.main
 ```
 
 ## 📖 사용법
@@ -193,17 +196,28 @@ guitar2tabs/
 │   ├── globals.css        # 글로벌 스타일
 │   ├── layout.tsx         # 루트 레이아웃
 │   └── page.tsx           # 메인 페이지
-├── components/            # React 컴포넌트
+├── components/            # React 컴포넌트 (실사용 컴포넌트는 전부 여기)
 │   ├── YouTubePlayer.tsx  # 유튜브 플레이어
 │   ├── TabViewer.tsx      # 타브 뷰어
 │   └── LoadingSpinner.tsx # 로딩 스피너
-├── python-backend/        # Python 백엔드
-│   ├── real_analysis_main.py  # 실제 분석 API 메인
-│   └── services/         # 서비스 모듈
-│       ├── audio_pipeline.py     # 유튜브 추출/저장 파이프라인
-│       ├── youtube_extractor.py  # 레거시 추출기
-│       ├── audio_analyzer.py     # 레거시 분석기
-│       └── tab_generator.py      # 타브 생성
+├── python-backend/        # Python 백엔드 (단일 진입점으로 통합됨)
+│   ├── app/
+│   │   ├── main.py               # FastAPI 앱 (유일한 진입점)
+│   │   ├── config.py             # 환경변수 기반 설정
+│   │   ├── schemas.py            # 요청/응답 모델
+│   │   └── pipeline/
+│   │       ├── youtube.py        # 유튜브 추출 (yt-dlp)
+│   │       ├── separation.py     # 기타 스템 분리 (Demucs, 선택)
+│   │       ├── transcription.py  # 다성 채보 (Basic Pitch, 없으면 librosa 폴백)
+│   │       ├── features.py       # 템포/조성/코드 추출 (librosa)
+│   │       ├── fretboard.py      # MIDI -> 지판 운지 최적화 (비터비 DP)
+│   │       ├── tab.py            # 노트 -> 마디 단위 타브 조립
+│   │       ├── export.py         # MIDI/MusicXML 내보내기
+│   │       └── analyzer.py       # 위 단계들을 잇는 오케스트레이터
+│   ├── tests/                    # pytest 단위 테스트
+│   ├── requirements.txt          # 기본 의존성 (torch 없이 동작)
+│   ├── requirements-hq.txt       # 고품질 모드: Basic Pitch + Demucs
+│   └── requirements-dev.txt      # 테스트용
 ├── scripts/
 │   └── smoke-real-analysis.ps1   # 회귀 스모크 테스트
 ├── docker-compose.yml     # Docker 설정
@@ -211,17 +225,45 @@ guitar2tabs/
 └── README.md             # 프로젝트 문서
 ```
 
+### 분석 파이프라인 (`python-backend/app/pipeline`)
+
+```
+유튜브 URL
+  → youtube.py       yt-dlp로 오디오 추출 (여러 클라이언트 전략을 순차 시도)
+  → separation.py    Demucs로 기타 스템만 분리 (quality=high, 선택적)
+  → transcription.py Basic Pitch로 다성 채보 (미설치 시 librosa CQT 폴백)
+  → features.py      템포/비트/조성/코드 진행 추출 (librosa)
+  → fretboard.py      MIDI 노트를 지판 위치로 배치 — 프레임별 후보 운지(Shape)를
+                       만들고 손 이동 비용까지 포함한 비터비 최단경로로 선택
+  → tab.py           비트 격자에 양자화 후 마디 단위로 조립, 기법(해머온/바레 등) 태깅
+  → export.py        MIDI(pretty_midi) / MusicXML(music21) 내보내기
+```
+
+이전 구현(`real_analysis_main.py`)은 단선율 피치 추적(`librosa.yin`)으로 슬롯당
+음 하나만 뽑고, 운지도 직전 위치를 고려하지 않는 `min()` 그리디였다. 기타는
+화음 악기이고 손은 한 번에 한 곳에만 있을 수 있으므로 그 방식으로는 근본적으로
+정확한 타브가 나올 수 없었다. 지금은 다성 채보 + DP 기반 운지 최적화로 교체했다.
+
+### 품질 모드
+- `fast`: 분리 없이 원본을 그대로 채보 (가장 빠름)
+- `balanced` (기본값): 가능하면 Demucs로 기타 스템 분리 후 채보
+- `high`: 분리 필수 + 채보 임계값을 낮춰 약한 소리까지 포착 (가장 느림, 가장 정확)
+
+`requirements-hq.txt`를 설치하지 않아도 서버는 정상 동작하며, `librosa` 폴백
+채보로 자동 전환된다. `/health`, `/capabilities` 엔드포인트에서 현재 어떤
+엔진이 켜져 있는지 확인할 수 있다.
+
 ## 🛠️ 개발 가이드
 
 ### 새로운 기능 추가
 1. **프론트엔드**: `components/` 디렉토리에 새 컴포넌트 추가
-2. **백엔드**: `python-backend/services/` 디렉토리에 새 서비스 추가
-3. **API**: `python-backend/main.py`에 새 엔드포인트 추가
+2. **백엔드**: `python-backend/app/pipeline/` 디렉토리에 새 파이프라인 단계 추가
+3. **API**: `python-backend/app/main.py`에 새 엔드포인트 추가
 
-### AI 모델 개선
-1. **새 모델 추가**: `python-backend/services/ai_processor.py` 수정
-2. **성능 최적화**: `python-backend/services/audio_analyzer.py` 개선
-3. **정확도 향상**: 더 많은 훈련 데이터와 하이퍼파라미터 튜닝
+### 채보/타브 정확도 개선
+1. **채보 엔진 교체**: `python-backend/app/pipeline/transcription.py` 수정
+2. **운지 최적화 튜닝**: `python-backend/app/pipeline/fretboard.py`의 비용 함수 조정
+3. **테스트**: `cd python-backend && python -m pytest tests/ -q`로 회귀 확인
 
 ## 🐛 문제 해결
 

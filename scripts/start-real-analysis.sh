@@ -21,7 +21,7 @@ if [ ! -z "$PID" ]; then
   exit 1
 fi
 
-echo "[backend] starting real_analysis_main.py on :$PORT"
+echo "[backend] starting app.main on :$PORT"
 cd "$(dirname "$0")/../python-backend"
 
 if [ -d "venv" ]; then
@@ -29,5 +29,5 @@ if [ -d "venv" ]; then
   source venv/bin/activate
 fi
 
-# Run the real analysis backend
-python3 real_analysis_main.py
+# Run the analysis backend (single consolidated entrypoint)
+python3 -m app.main

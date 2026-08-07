@@ -26,6 +26,6 @@ if ($listening) {
   exit 1
 }
 
-Write-Host "[backend] starting real_analysis_main.py on :$port"
+Write-Host "[backend] starting app.main on :$port"
 Set-Location (Join-Path $PSScriptRoot "..\\python-backend")
-python real_analysis_main.py
+python -m app.main

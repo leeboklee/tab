@@ -3,7 +3,7 @@ import sys
 
 import requests
 
-# 실제 분석 API(real_analysis_main.py, 기본 포트 8002)와 맞춤
+# 실제 분석 API(python-backend/app/main.py, 기본 포트 8002)와 맞춤
 BASE_URL = os.environ.get("REAL_AUDIO_API_BASE", "http://localhost:8002").rstrip("/")
 
 
@@ -72,7 +72,7 @@ if __name__ == "__main__":
     print(f"=== 서버 테스트 (BASE_URL={BASE_URL}) ===\n")
 
     if not test_health():
-        print("서버가 실행되지 않았습니다. python-backend 에서: python real_analysis_main.py")
+        print("서버가 실행되지 않았습니다. python-backend 에서: python -m app.main")
         sys.exit(1)
 
     print("\n=== 음원 추출만 ===")

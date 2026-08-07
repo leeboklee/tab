@@ -11,9 +11,11 @@
     "start": "next start -p 3019",
     "lint": "next lint",
     "test:smoke:analysis": "bash scripts/smoke-real-analysis.sh",
-    "python:dev": "cd python-backend && python -m uvicorn main:app --reload --port 8000",
-    "python:real": "cd python-backend && python real_analysis_main.py",
+    "python:dev": "cd python-backend && python -m uvicorn app.main:app --reload --port 8002",
+    "python:real": "cd python-backend && python -m app.main",
     "python:install": "cd python-backend && pip install -r requirements.txt",
+    "python:install:hq": "cd python-backend && pip install -r requirements.txt -r requirements-hq.txt",
+    "python:test": "cd python-backend && python -m pytest tests/ -q",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down"
   },
