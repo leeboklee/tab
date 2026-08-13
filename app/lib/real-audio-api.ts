@@ -92,6 +92,18 @@ export class RealAudioAPI {
       })
 
       if (!response.ok) {
+        try {
+          const body = await response.json()
+          if (body && typeof body === 'object' && ('error' in body || 'success' in body)) {
+            return {
+              success: Boolean(body.success),
+              data: body.data,
+              error: typeof body.error === 'string' ? body.error : `HTTP error! status: ${response.status}`,
+            }
+          }
+        } catch {
+          // fall through to generic HTTP error
+        }
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 

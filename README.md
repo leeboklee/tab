@@ -110,6 +110,13 @@ curl -X POST "http://localhost:8002/analyze-from-audio" \
   -d '{"audio_id": "AUDIO_ID"}'
 ```
 
+### 분석 캐시/병목 진단
+```bash
+curl "http://localhost:8002/analysis-metrics"
+```
+- 동일 URL/품질 조합은 기본 1시간(3600초) 동안 메모리 캐시(`ANALYSIS_RESULT_CACHE_TTL_SEC`)로 재사용되어 중복 병목 호출을 줄입니다.
+- 병목 원인 추적은 최근 요청 로그에서 캐시 히트/미스, 추출·분석 소요 시간을 제공합니다.
+
 ### 헬스체크
 ```bash
 curl "http://localhost:8002/health"
@@ -136,6 +143,11 @@ npm run dev:backend
 - `REAL_AUDIO_API_BASE`: CLI 테스트와 스모크 테스트가 호출할 실제 분석 서버 주소. 기본값 `http://localhost:8002`
 - `YTDLP_COOKIE_FILE`: 제한 영상 대응용 Netscape 형식 쿠키 파일 경로
 - `YTDLP_COOKIES_FROM_BROWSER`: 브라우저 쿠키 직접 읽기 설정. 예: `chrome`, `edge:Default`
+- `ANALYSIS_RESULT_CACHE_TTL_SEC`: 분석 결과 캐시 TTL(초), 기본 `3600`
+- `ANALYSIS_RESULT_CACHE_MAXSIZE`: 분석 캐시 최대 항목 수, 기본 `256`
+- `ANALYSIS_METRICS_LIMIT`: 최근 요청 메트릭 저장 수, 기본 `200`
+- `ANALYSIS_INFLIGHT_LOCK_TTL_SEC`: single-flight 잠금 유휴 TTL(초), 기본 `3600`
+- `ANALYSIS_INFLIGHT_LOCK_MAXSIZE`: single-flight 잠금 최대 키 수, 기본 `512`
 
 ### 클론/환경 이관 체크
 ```bash

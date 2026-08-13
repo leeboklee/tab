@@ -1,12 +1,16 @@
 import hashlib
 import logging
+import asyncio
 import os
 import random
+import time
 import subprocess
 import sys
 import tempfile
+from collections import deque
+from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 import requests
 import uvicorn
@@ -14,6 +18,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
+from cachetools import TTLCache
 
 from services.audio_pipeline import AudioExtractionError, AudioPipelineService
 
@@ -37,6 +42,140 @@ DIFFICULTY_INTERMEDIATE = "\uc911\uae09"
 DIFFICULTY_ADVANCED = "\uace0\uae09"
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+        return value if value > 0 else default
+    except ValueError:
+        return default
+
+
+ANALYSIS_RESULT_CACHE_TTL_SEC = _env_int("ANALYSIS_RESULT_CACHE_TTL_SEC", 3600)
+ANALYSIS_RESULT_CACHE_MAXSIZE = _env_int("ANALYSIS_RESULT_CACHE_MAXSIZE", 256)
+ANALYSIS_METRICS_LIMIT = _env_int("ANALYSIS_METRICS_LIMIT", 200)
+ANALYSIS_INFLIGHT_LOCK_TTL_SEC = _env_int("ANALYSIS_INFLIGHT_LOCK_TTL_SEC", 3600)
+ANALYSIS_INFLIGHT_LOCK_MAXSIZE = _env_int("ANALYSIS_INFLIGHT_LOCK_MAXSIZE", 512)
+ANALYSIS_RESULT_CACHE = TTLCache(maxsize=ANALYSIS_RESULT_CACHE_MAXSIZE, ttl=ANALYSIS_RESULT_CACHE_TTL_SEC)
+ANALYSIS_REQUEST_METRICS = deque(maxlen=ANALYSIS_METRICS_LIMIT)
+ANALYSIS_INFLIGHT_LOCKS: Dict[str, asyncio.Lock] = {}
+ANALYSIS_INFLIGHT_LOCK_LAST_USED: Dict[str, float] = {}
+
+
+def _analysis_cache_key(namespace: str, ident: str, quality: str) -> str:
+    source = f"{namespace}:{quality}:{ident.strip()}"
+    return hashlib.sha1(source.encode("utf-8")).hexdigest()
+
+
+def _analysis_cache_get(cache_key: str) -> Tuple[Optional[Dict[str, Any]], Optional[float]]:
+    cached = ANALYSIS_RESULT_CACHE.get(cache_key)
+    if not cached:
+        return None, None
+    payload = deepcopy(cached.get("payload", {}))
+    return payload, cached.get("cached_at")
+
+
+def _analysis_cache_set(cache_key: str, payload: Dict[str, Any]) -> None:
+    ANALYSIS_RESULT_CACHE[cache_key] = {
+        "payload": deepcopy(payload),
+        "cached_at": time.time(),
+    }
+
+
+def _analysis_cache_set_meta(payload: Dict[str, Any], *, cache_hit: bool, cached_at: Optional[float] = None, **extra: Any) -> None:
+    metadata = payload.setdefault("metadata", {})
+    pipeline_diagnostics = metadata.setdefault("pipeline_diagnostics", {})
+    cache_info = pipeline_diagnostics.setdefault("cache", {})
+    cache_info["status"] = "hit" if cache_hit else "miss"
+    if cache_hit and cached_at is not None:
+        cache_info["cached_age_sec"] = round(max(time.time() - cached_at, 0.0), 3)
+    for key, value in extra.items():
+        if value is not None:
+            cache_info[key] = value
+
+
+def _record_analysis_metric(sample: Dict[str, Any]) -> None:
+    ANALYSIS_REQUEST_METRICS.appendleft({
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        **sample,
+    })
+
+
+def _record_analysis_failure(
+    *,
+    cache_key: str,
+    quality: str,
+    request_source: str,
+    error: str,
+    failed_stage: str,
+    total_sec: float,
+) -> None:
+    _record_analysis_metric(
+        {
+            "cache_key": cache_key,
+            "cache_hit": False,
+            "quality": quality,
+            "request_source": request_source,
+            "result_mode": "error",
+            "total_sec": round(total_sec, 3),
+            "extract_sec": None,
+            "analysis_sec": 0.0,
+            "error": error,
+            "failed_stage": failed_stage,
+        }
+    )
+
+
+def _failed_stage_for_exception(exc: Exception) -> str:
+    if isinstance(exc, AudioExtractionError):
+        return "youtube_extraction"
+    if isinstance(exc, FileNotFoundError):
+        return "audio_not_found"
+    if isinstance(exc, RuntimeError):
+        return "analysis_runtime"
+    return "unknown"
+
+
+def _prune_inflight_locks() -> None:
+    now = time.time()
+    stale_keys = [
+        key
+        for key, lock in ANALYSIS_INFLIGHT_LOCKS.items()
+        if not lock.locked()
+        and now - ANALYSIS_INFLIGHT_LOCK_LAST_USED.get(key, 0.0) > ANALYSIS_INFLIGHT_LOCK_TTL_SEC
+    ]
+    for key in stale_keys:
+        ANALYSIS_INFLIGHT_LOCKS.pop(key, None)
+        ANALYSIS_INFLIGHT_LOCK_LAST_USED.pop(key, None)
+
+    if len(ANALYSIS_INFLIGHT_LOCKS) <= ANALYSIS_INFLIGHT_LOCK_MAXSIZE:
+        return
+
+    overflow_keys = sorted(
+        (
+            key
+            for key, lock in ANALYSIS_INFLIGHT_LOCKS.items()
+            if not lock.locked()
+        ),
+        key=lambda key: ANALYSIS_INFLIGHT_LOCK_LAST_USED.get(key, 0.0),
+    )
+    for key in overflow_keys[: max(len(ANALYSIS_INFLIGHT_LOCKS) - ANALYSIS_INFLIGHT_LOCK_MAXSIZE, 0)]:
+        ANALYSIS_INFLIGHT_LOCKS.pop(key, None)
+        ANALYSIS_INFLIGHT_LOCK_LAST_USED.pop(key, None)
+
+
+def _get_inflight_lock(cache_key: str) -> asyncio.Lock:
+    lock = ANALYSIS_INFLIGHT_LOCKS.get(cache_key)
+    if lock is None:
+        lock = asyncio.Lock()
+        ANALYSIS_INFLIGHT_LOCKS[cache_key] = lock
+    ANALYSIS_INFLIGHT_LOCK_LAST_USED[cache_key] = time.time()
+    _prune_inflight_locks()
+    return lock
+
+
 class AnalysisRequest(BaseModel):
     url: str = Field(..., description="YouTube URL")
     quality: str = Field("balanced", description="Analysis quality: balanced, local_quality, cloud")
@@ -51,6 +190,32 @@ class ApiResponse(BaseModel):
     success: bool
     data: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+
+
+def _coerce_api_response(body: Any) -> ApiResponse:
+    if isinstance(body, ApiResponse):
+        return body
+    if isinstance(body, dict):
+        if "success" in body:
+            return ApiResponse(
+                success=bool(body.get("success")),
+                data=body.get("data"),
+                error=body.get("error"),
+            )
+        return ApiResponse(success=True, data=body)
+    return ApiResponse(success=False, error="Invalid cloud analysis response", data={"failed_stage": "cloud_analysis"})
+
+
+def _analysis_error_response(
+    error: str,
+    *,
+    failed_stage: str,
+    data: Optional[Dict[str, Any]] = None,
+) -> ApiResponse:
+    payload: Dict[str, Any] = {"failed_stage": failed_stage}
+    if data:
+        payload.update(data)
+    return ApiResponse(success=False, error=error, data=payload)
 
 
 def _analysis_dependency_status() -> Dict[str, Any]:
@@ -103,7 +268,7 @@ def _high_quality_status() -> Dict[str, Any]:
         }
 
 
-def _forward_to_cloud_analysis(request: AnalysisRequest) -> Optional[Dict[str, Any]]:
+def _forward_to_cloud_analysis(request: AnalysisRequest) -> Optional[ApiResponse]:
     base_url = os.getenv("CLOUD_ANALYSIS_API_BASE", "").strip().rstrip("/")
     if not base_url:
         return None
@@ -115,9 +280,31 @@ def _forward_to_cloud_analysis(request: AnalysisRequest) -> Optional[Dict[str, A
 
     timeout = int(os.getenv("CLOUD_ANALYSIS_TIMEOUT_SEC", "900"))
     payload = {"url": request.url, "quality": "local_quality"}
-    response = requests.post(f"{base_url}/analyze", json=payload, headers=headers, timeout=timeout)
-    response.raise_for_status()
-    return response.json()
+    try:
+        response = requests.post(f"{base_url}/analyze", json=payload, headers=headers, timeout=timeout)
+        response.raise_for_status()
+        return _coerce_api_response(response.json())
+    except requests.Timeout as exc:
+        logger.error("Cloud analysis timed out: %s", exc)
+        return _analysis_error_response(
+            "Cloud analysis timed out",
+            failed_stage="cloud_analysis_timeout",
+            data={"cloud_configured": True},
+        )
+    except requests.RequestException as exc:
+        logger.error("Cloud analysis request failed: %s", exc)
+        return _analysis_error_response(
+            f"Cloud analysis failed: {exc}",
+            failed_stage="cloud_analysis",
+            data={"cloud_configured": True},
+        )
+    except ValueError as exc:
+        logger.error("Cloud analysis returned invalid JSON: %s", exc)
+        return _analysis_error_response(
+            "Cloud analysis returned invalid JSON",
+            failed_stage="cloud_analysis",
+            data={"cloud_configured": True},
+        )
 
 
 def _normalize_tempo(raw_tempo: Any) -> int:
@@ -411,6 +598,7 @@ def _extract_demucs_guitar_stem(audio_path: str, max_duration: int = 90) -> Tupl
 
 
 def _analyze_audio_waveform(audio_path: str, quality: str = "balanced") -> Tuple[Optional[Dict[str, Any]], Dict[str, Any]]:
+    start_total = time.perf_counter()
     try:
         import librosa
         import numpy as np
@@ -422,18 +610,29 @@ def _analyze_audio_waveform(audio_path: str, quality: str = "balanced") -> Tuple
         }
 
     try:
+        timing: Dict[str, Any] = {
+            "analysis_total_sec": 0.0,
+            "load_sec": 0.0,
+            "stem_sec": 0.0,
+            "feature_sec": 0.0,
+        }
         source_path = audio_path
         stem_diag: Dict[str, Any] = {"stem_separation_status": "not_requested"}
         if quality == "local_quality":
+            stem_start = time.perf_counter()
             stem_path, stem_diag = _extract_demucs_guitar_stem(audio_path)
+            timing["stem_sec"] = round(time.perf_counter() - stem_start, 3)
             if stem_path:
                 source_path = stem_path
 
         hop_length = 1024
+        load_start = time.perf_counter()
         y, sr = librosa.load(source_path, sr=16000, mono=True, duration=90)
         if y is None or len(y) == 0:
             raise RuntimeError("empty audio signal")
+        timing["load_sec"] = round(time.perf_counter() - load_start, 3)
 
+        feature_start = time.perf_counter()
         raw_tempo, _ = librosa.beat.beat_track(y=y, sr=sr, hop_length=hop_length)
         tempo = _normalize_tempo(raw_tempo)
 
@@ -451,6 +650,8 @@ def _analyze_audio_waveform(audio_path: str, quality: str = "balanced") -> Tuple
         difficulty = _estimate_difficulty(tempo, onset_density, avg_centroid)
         chords = _estimate_chords(chroma, sr, hop_length)
         tabs, pitch_diag = _estimate_pitch_tabs(y, sr, tempo, duration)
+        timing["feature_sec"] = round(time.perf_counter() - feature_start, 3)
+        timing["analysis_total_sec"] = round(time.perf_counter() - start_total, 3)
 
         return (
             {
@@ -461,12 +662,14 @@ def _analyze_audio_waveform(audio_path: str, quality: str = "balanced") -> Tuple
                 "chord_progressions": chords,
                 "tabs": tabs,
                 "analysis_method": "audio_waveform",
+                "analysis_timing": timing,
             },
             {
                 "audio_analysis_status": "ok",
                 "analysis_quality": quality,
                 "onset_density": round(onset_density, 3),
                 "spectral_centroid": round(avg_centroid, 2),
+                "analysis_total_sec": timing["analysis_total_sec"],
                 **stem_diag,
                 **pitch_diag,
             },
@@ -567,6 +770,7 @@ def _build_result_payload(record: Dict[str, Any], analysis: Dict[str, Any], anal
     key = analysis.get("key") or "C"
     difficulty = analysis.get("difficulty") or DIFFICULTY_INTERMEDIATE
     duration = int(analysis.get("duration") or record.get("duration") or 0)
+    analysis_timing = analysis.get("analysis_timing", {})
 
     seed = f"{record.get('audio_id', '')}:{record.get('source_video_id', '')}:{tempo}:{key}"
     analysis_tabs = analysis.get("tabs") if isinstance(analysis.get("tabs"), list) else []
@@ -607,12 +811,14 @@ def _build_result_payload(record: Dict[str, Any], analysis: Dict[str, Any], anal
                 "extract_attempts": record.get("attempts", []),
                 "extract_runtime": record.get("diagnostics", {}),
                 "audio_analysis": analysis_diagnostics,
+                "analysis_timing": analysis_timing,
             },
         },
     }
 
 
 def _analyze_record(record: Dict[str, Any], quality: str = "balanced") -> Dict[str, Any]:
+    start = time.perf_counter()
     audio_path = record.get("audio_path")
     if not audio_path:
         raise RuntimeError("Saved audio path is missing")
@@ -628,7 +834,142 @@ def _analyze_record(record: Dict[str, Any], quality: str = "balanced") -> Dict[s
     else:
         audio_diag = {**audio_diag, "fallback_applied": False}
 
-    return _build_result_payload(record, analysis, audio_diag)
+    payload = _build_result_payload(record, analysis, audio_diag)
+    payload["metadata"]["pipeline_diagnostics"]["analysis_runtime_sec"] = round(time.perf_counter() - start, 3)
+    return payload
+
+
+def _append_cache_and_runtime_metric(
+    *,
+    cache_key: str,
+    cache_hit: bool,
+    quality: str,
+    request_source: str,
+    total_sec: float,
+    extract_sec: Optional[float],
+    analysis_sec: float,
+    result_mode: str,
+) -> None:
+    _record_analysis_metric(
+        {
+            "cache_key": cache_key,
+            "cache_hit": cache_hit,
+            "quality": quality,
+            "request_source": request_source,
+            "result_mode": result_mode,
+            "total_sec": round(total_sec, 3),
+            "extract_sec": None if extract_sec is None else round(extract_sec, 3),
+            "analysis_sec": round(analysis_sec, 3),
+        }
+    )
+
+
+def _payload_result_mode(payload: Dict[str, Any]) -> str:
+    return payload.get("metadata", {}).get("result_mode", "unknown")
+
+
+def _payload_analysis_runtime_sec(payload: Dict[str, Any]) -> float:
+    return float(
+        payload.get("metadata", {})
+        .get("pipeline_diagnostics", {})
+        .get("analysis_runtime_sec", 0.0)
+    )
+
+
+def _cache_hit_response(
+    *,
+    cache_key: str,
+    quality: str,
+    request_source: str,
+    payload: Dict[str, Any],
+    cached_at: Optional[float],
+    request_start: float,
+    extract_sec: Optional[float] = None,
+) -> ApiResponse:
+    _analysis_cache_set_meta(
+        payload,
+        cache_hit=True,
+        cached_at=cached_at,
+        request_source=request_source,
+    )
+    _append_cache_and_runtime_metric(
+        cache_key=cache_key,
+        cache_hit=True,
+        quality=quality,
+        request_source=request_source,
+        total_sec=time.perf_counter() - request_start,
+        extract_sec=extract_sec,
+        analysis_sec=_payload_analysis_runtime_sec(payload),
+        result_mode=_payload_result_mode(payload),
+    )
+    return ApiResponse(success=True, data=payload)
+
+
+async def _run_cached_analysis(
+    *,
+    cache_key: str,
+    quality: str,
+    request_source: str,
+    compute: Callable[[], Awaitable[Tuple[Dict[str, Any], Optional[float], Dict[str, Any]]]],
+) -> ApiResponse:
+    request_start = time.perf_counter()
+
+    cached_payload, cached_at = _analysis_cache_get(cache_key)
+    if cached_payload is not None:
+        return _cache_hit_response(
+            cache_key=cache_key,
+            quality=quality,
+            request_source=request_source,
+            payload=cached_payload,
+            cached_at=cached_at,
+            request_start=request_start,
+        )
+
+    lock = _get_inflight_lock(cache_key)
+    async with lock:
+        cached_payload, cached_at = _analysis_cache_get(cache_key)
+        if cached_payload is not None:
+            return _cache_hit_response(
+                cache_key=cache_key,
+                quality=quality,
+                request_source=request_source,
+                payload=cached_payload,
+                cached_at=cached_at,
+                request_start=request_start,
+            )
+
+        try:
+            data, extract_sec, meta_extra = await compute()
+        except Exception as exc:
+            _record_analysis_failure(
+                cache_key=cache_key,
+                quality=quality,
+                request_source=request_source,
+                error=str(exc),
+                failed_stage=_failed_stage_for_exception(exc),
+                total_sec=time.perf_counter() - request_start,
+            )
+            raise
+
+        analysis_sec = _payload_analysis_runtime_sec(data)
+        _append_cache_and_runtime_metric(
+            cache_key=cache_key,
+            cache_hit=False,
+            quality=quality,
+            request_source=request_source,
+            total_sec=time.perf_counter() - request_start,
+            extract_sec=extract_sec,
+            analysis_sec=analysis_sec,
+            result_mode=_payload_result_mode(data),
+        )
+        _analysis_cache_set_meta(
+            data,
+            cache_hit=False,
+            request_source=request_source,
+            **meta_extra,
+        )
+        _analysis_cache_set(cache_key, data)
+        return ApiResponse(success=True, data=data)
 
 
 @app.get("/")
@@ -645,6 +986,16 @@ async def health_check():
             "audio_analysis_deps": _analysis_dependency_status(),
             "cloud_analysis": _cloud_analysis_status(),
             "high_quality": _high_quality_status(),
+            "analysis_cache": {
+                "maxsize": ANALYSIS_RESULT_CACHE.maxsize,
+                "ttl_sec": ANALYSIS_RESULT_CACHE_TTL_SEC,
+                "current_size": len(ANALYSIS_RESULT_CACHE),
+            },
+            "analysis_inflight_locks": {
+                "maxsize": ANALYSIS_INFLIGHT_LOCK_MAXSIZE,
+                "ttl_sec": ANALYSIS_INFLIGHT_LOCK_TTL_SEC,
+                "current_size": len(ANALYSIS_INFLIGHT_LOCKS),
+            },
         },
     }
 
@@ -663,6 +1014,24 @@ async def test_audio_analysis():
     )
 
 
+@app.get("/analysis-metrics")
+async def get_analysis_metrics():
+    return {
+        "total": len(ANALYSIS_REQUEST_METRICS),
+        "cache": {
+            "maxsize": ANALYSIS_RESULT_CACHE.maxsize,
+            "ttl_sec": ANALYSIS_RESULT_CACHE_TTL_SEC,
+            "current_size": len(ANALYSIS_RESULT_CACHE),
+        },
+        "inflight_locks": {
+            "maxsize": ANALYSIS_INFLIGHT_LOCK_MAXSIZE,
+            "ttl_sec": ANALYSIS_INFLIGHT_LOCK_TTL_SEC,
+            "current_size": len(ANALYSIS_INFLIGHT_LOCKS),
+        },
+        "recent_requests": list(ANALYSIS_REQUEST_METRICS),
+    }
+
+
 @app.post("/extract-audio", response_model=ApiResponse)
 async def extract_audio(request: AnalysisRequest):
     try:
@@ -670,10 +1039,10 @@ async def extract_audio(request: AnalysisRequest):
         return ApiResponse(success=True, data=record)
     except AudioExtractionError as exc:
         logger.error("Audio extraction failed: %s", exc)
-        return ApiResponse(success=False, error=str(exc), data={"diagnostics": exc.diagnostics})
+        return _analysis_error_response(str(exc), failed_stage="youtube_extraction", data={"diagnostics": exc.diagnostics})
     except Exception as exc:
         logger.error("Unexpected extraction error: %s", exc)
-        return ApiResponse(success=False, error=str(exc))
+        return _analysis_error_response(str(exc), failed_stage="youtube_extraction")
 
 
 @app.get("/audio/{audio_id}", response_model=ApiResponse)
@@ -681,8 +1050,12 @@ async def get_audio_record(audio_id: str):
     try:
         record = pipeline.load_record(audio_id)
         return ApiResponse(success=True, data=record)
+    except FileNotFoundError as exc:
+        logger.warning("Audio record not found: %s", audio_id)
+        return _analysis_error_response(str(exc), failed_stage="audio_not_found", data={"audio_id": audio_id})
     except Exception as exc:
-        return ApiResponse(success=False, error=str(exc))
+        logger.error("Failed to load audio record %s: %s", audio_id, exc)
+        return _analysis_error_response(str(exc), failed_stage="audio_load")
 
 
 @app.post("/analyze-from-audio", response_model=ApiResponse)
@@ -690,11 +1063,28 @@ async def analyze_from_audio(request: AnalyzeFromAudioRequest):
     try:
         record = pipeline.load_record(request.audio_id)
         quality = "local_quality" if request.quality == "local_quality" else "balanced"
-        data = await run_in_threadpool(_analyze_record, record, quality)
-        return ApiResponse(success=True, data=data)
+        cache_key = _analysis_cache_key("audio_id", request.audio_id, quality)
+
+        async def compute() -> Tuple[Dict[str, Any], Optional[float], Dict[str, Any]]:
+            data = await run_in_threadpool(_analyze_record, record, quality)
+            return data, None, {}
+
+        return await _run_cached_analysis(
+            cache_key=cache_key,
+            quality=quality,
+            request_source="analyze_from_audio",
+            compute=compute,
+        )
+    except FileNotFoundError as exc:
+        logger.warning("Analyze-from-audio missing record: %s", request.audio_id)
+        return _analysis_error_response(
+            str(exc),
+            failed_stage="audio_not_found",
+            data={"audio_id": request.audio_id},
+        )
     except Exception as exc:
         logger.error("Analyze-from-audio failed: %s", exc)
-        return ApiResponse(success=False, error=str(exc))
+        return _analysis_error_response(str(exc), failed_stage=_failed_stage_for_exception(exc))
 
 
 @app.post("/analyze", response_model=ApiResponse)
@@ -705,20 +1095,39 @@ async def analyze_music(request: AnalysisRequest):
             if cloud_response is not None:
                 return cloud_response
 
-        record = await run_in_threadpool(pipeline.extract_audio, request.url)
         quality = "local_quality" if request.quality == "local_quality" else "balanced"
-        data = await run_in_threadpool(_analyze_record, record, quality)
-        return ApiResponse(success=True, data=data)
+        cache_key = _analysis_cache_key("url", request.url, quality)
+
+        async def compute() -> Tuple[Dict[str, Any], Optional[float], Dict[str, Any]]:
+            extraction_start = time.perf_counter()
+            record = await run_in_threadpool(pipeline.extract_audio, request.url)
+            extract_sec = time.perf_counter() - extraction_start
+            analyze_start = time.perf_counter()
+            data = await run_in_threadpool(_analyze_record, record, quality)
+            analysis_sec = time.perf_counter() - analyze_start
+            total_sec = extract_sec + analysis_sec
+            return data, extract_sec, {
+                "extract_sec": round(extract_sec, 3),
+                "analysis_sec": round(analysis_sec, 3),
+                "total_sec": round(total_sec, 3),
+            }
+
+        return await _run_cached_analysis(
+            cache_key=cache_key,
+            quality=quality,
+            request_source="analyze",
+            compute=compute,
+        )
     except AudioExtractionError as exc:
         logger.error("Analyze failed at extraction stage: %s", exc)
-        return ApiResponse(
-            success=False,
-            error="Audio extraction failed before analysis",
-            data={"diagnostics": exc.diagnostics, "failed_stage": "youtube_extraction"},
+        return _analysis_error_response(
+            "Audio extraction failed before analysis",
+            failed_stage="youtube_extraction",
+            data={"diagnostics": exc.diagnostics},
         )
     except Exception as exc:
         logger.error("Analyze failed unexpectedly: %s", exc)
-        return ApiResponse(success=False, error=str(exc), data={"failed_stage": "unknown"})
+        return _analysis_error_response(str(exc), failed_stage=_failed_stage_for_exception(exc))
 
 
 @app.post("/analyze-audio", response_model=ApiResponse)
