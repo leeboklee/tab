@@ -44,7 +44,7 @@
 | # | 항목 | 상태 |
 |---|------|------|
 | 1 | `pip install -r requirements.txt` (venv) | 1회 (완료됨) |
-| 2 | **git commit + push** | feature `feat/analysis-cache-inflight` (진행) |
+| 2 | **git commit + push** | ✅ `feat/analysis-cache-inflight` + [PR #1](https://github.com/leeboklee/tab/pull/1) |
 | 3 | `ANALYSIS_METRICS_LIMIT` 운영량 조정 | 선택 |
 | 4 | `CLOUD_ANALYSIS_API_BASE` 클라우드 분석 | 선택 |
 
@@ -107,19 +107,13 @@ npm run test:smoke:analysis
 
 - **큐:** 없음 (단일 Codex goal 완료)
 - **검증:** build / check:backend / smoke Pass
-- **커밋:** 없음 — push 안 함
+- **커밋/푸시:** `3c14196` → `origin/feat/analysis-cache-inflight` + PR #1
 - **handoff:** 본 문서
+- **Cloud Agent:** https://cursor.com/agents/bc-dc3063f1-8cfa-4a45-a5ab-5016428bb516
 - **백로그(큐 아님):** ESLint 초기 설정 프롬프트, cloud 분석 실서버 연동
 
-### Cursor Agent 시작 프롬프트 (복붙)
+### Cursor Cloud 이어받기
 
-```
-@/mnt/c/Users/hapsl/Downloads/codex-cursor-handoff-playbook.md
-@~/projects/tabe
-
-Codex session: 019ec179-657e-7543-a815-a3f7252f1472
-handoff: docs/analysis-cache-handoff.md
-npm run check:codex && npm run check
-```
-
-**이 채팅에서 이어할 작업 없음.**
+- PR: https://github.com/leeboklee/tab/pull/1
+- Agent: https://cursor.com/agents/bc-dc3063f1-8cfa-4a45-a5ab-5016428bb516
+- 지시: PR 리뷰·안전 보완만, 머지 금지
