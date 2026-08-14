@@ -15,7 +15,11 @@ export interface AudioHealthResponse {
       ffmpeg_source?: string
       yt_dlp_version?: string
       cookie_file_configured?: boolean
+      cookie_file_env_missing?: boolean
       cookies_from_browser_configured?: boolean
+      pot_provider_installed?: boolean
+      pot_http_reachable?: boolean
+      pot_base_url?: string
     }
     audio_analysis_deps?: {
       librosa?: boolean
@@ -24,6 +28,7 @@ export interface AudioHealthResponse {
     cloud_analysis?: {
       configured?: boolean
       api_key_configured?: boolean
+      timeout_sec?: number
     }
     analysis_cache?: {
       maxsize?: number

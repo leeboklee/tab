@@ -11,6 +11,7 @@
     "start": "next start -p 3019",
     "lint": "next lint",
     "check:backend": "bash scripts/check-backend.sh",
+    "check:cloud": "bash scripts/check-cloud.sh",
     "check:codex": "bash scripts/codex-handoff-audit.sh .",
     "check": "npm run build && npm run check:backend && npm run test:smoke:analysis",
     "test:smoke:analysis": "bash scripts/smoke-real-analysis.sh",

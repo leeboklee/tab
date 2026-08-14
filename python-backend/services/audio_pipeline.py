@@ -31,6 +31,11 @@ _NETWORK_BLOCK_MARKERS = (
 )
 
 
+_POT_HTTP_CACHE: Dict[str, Any] = {"checked_at": 0.0, "url": None, "reachable": False}
+_POT_HTTP_CACHE_TTL_SEC = 15.0
+_DEFAULT_POT_BASE_URL = "http://127.0.0.1:4416"
+
+
 def pot_provider_installed() -> bool:
     """Whether bgutil-ytdlp-pot-provider (or compatible) is installed.
 
@@ -42,6 +47,41 @@ def pot_provider_installed() -> bool:
         return True
     except importlib_metadata.PackageNotFoundError:
         return False
+
+
+def _pot_http_reachable(base_url: str, timeout_sec: float = 0.4) -> bool:
+    try:
+        import urllib.request
+
+        req = urllib.request.Request(f"{base_url.rstrip('/')}/ping", method="GET")
+        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+            return 200 <= int(getattr(resp, "status", 200)) < 500
+    except Exception:
+        return False
+
+
+def resolve_pot_base_url() -> Optional[str]:
+    """Return a live PO Token HTTP base URL, or None if unreachable."""
+    now = time.time()
+    cached_url = _POT_HTTP_CACHE.get("url")
+    if now - float(_POT_HTTP_CACHE.get("checked_at") or 0) < _POT_HTTP_CACHE_TTL_SEC:
+        return cached_url if _POT_HTTP_CACHE.get("reachable") else None
+
+    configured = os.getenv("YTDLP_POT_BASE_URL", "").strip().rstrip("/")
+    candidates = [configured] if configured else []
+    if _DEFAULT_POT_BASE_URL not in candidates:
+        candidates.append(_DEFAULT_POT_BASE_URL)
+
+    chosen: Optional[str] = None
+    for candidate in candidates:
+        if candidate and _pot_http_reachable(candidate):
+            chosen = candidate
+            break
+
+    _POT_HTTP_CACHE["checked_at"] = now
+    _POT_HTTP_CACHE["url"] = chosen
+    _POT_HTTP_CACHE["reachable"] = bool(chosen)
+    return chosen
 
 
 def classify_extraction_failure(attempts: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -97,15 +137,21 @@ class AudioPipelineService:
         self.yt_dlp_version = yt_dlp.version.__version__
 
     def diagnostics(self) -> Dict[str, Any]:
+        cookie_env = os.getenv("YTDLP_COOKIE_FILE", "").strip()
+        cookie_file = self._cookie_file_path()
+        pot_base = resolve_pot_base_url()
         return {
             "yt_dlp_version": self.yt_dlp_version,
             "ffmpeg_available": bool(self.ffmpeg_path),
             "ffmpeg_path": self.ffmpeg_path,
             "ffmpeg_source": self.ffmpeg_source,
             "storage_root": str(self.storage_root),
-            "cookie_file_configured": bool(self._cookie_file_path()),
+            "cookie_file_configured": bool(cookie_file),
+            "cookie_file_env_missing": bool(cookie_env) and not cookie_file,
             "cookies_from_browser_configured": bool(self._cookies_from_browser()),
             "pot_provider_installed": pot_provider_installed(),
+            "pot_http_reachable": bool(pot_base),
+            "pot_base_url": pot_base or "",
         }
 
     def extract_audio(self, url: str) -> Dict[str, Any]:
@@ -168,6 +214,7 @@ class AudioPipelineService:
         return record
 
     def _attempt_specs(self, work_dir: Path) -> List[Dict[str, Any]]:
+        mweb_args = {"youtube": {"player_client": ["mweb"]}}
         specs = [
             {
                 "name": "default_best_audio",
@@ -182,20 +229,28 @@ class AudioPipelineService:
             },
         ]
 
-        if pot_provider_installed():
+        if pot_provider_installed() or resolve_pot_base_url():
             # Plugin auto-attaches PO tokens; mweb is the strongest client per yt-dlp wiki.
             specs.append(
                 {
                     "name": "mweb_with_pot_provider",
-                    "opts": self._build_ydl_opts(
-                        work_dir,
-                        extractor_args={"youtube": {"player_client": ["mweb"]}},
-                    ),
+                    "opts": self._build_ydl_opts(work_dir, extractor_args=mweb_args),
                 }
             )
 
         cookie_file = self._cookie_file_path()
         if cookie_file:
+            # Cookies + mweb (+ POT if the HTTP server is up) is the local-PC bot bypass.
+            specs.append(
+                {
+                    "name": "cookies_mweb_pot",
+                    "opts": self._build_ydl_opts(
+                        work_dir,
+                        extractor_args=mweb_args,
+                        cookie_file=cookie_file,
+                    ),
+                }
+            )
             specs.append(
                 {
                     "name": "with_cookie_file",
@@ -205,6 +260,16 @@ class AudioPipelineService:
 
         cookies_from_browser = self._cookies_from_browser()
         if cookies_from_browser:
+            specs.append(
+                {
+                    "name": "browser_cookies_mweb_pot",
+                    "opts": self._build_ydl_opts(
+                        work_dir,
+                        extractor_args=mweb_args,
+                        cookies_from_browser=cookies_from_browser,
+                    ),
+                }
+            )
             specs.append(
                 {
                     "name": "with_browser_cookies",
@@ -234,8 +299,14 @@ class AudioPipelineService:
             "format_sort": ["hasaud", "acodec", "abr", "asr"],
         }
 
-        if extractor_args:
-            opts["extractor_args"] = extractor_args
+        merged_extractor_args: Dict[str, Any] = dict(extractor_args or {})
+        pot_base = resolve_pot_base_url()
+        if pot_base:
+            http_args = dict(merged_extractor_args.get("youtubepot-bgutilhttp") or {})
+            http_args.setdefault("base_url", [pot_base])
+            merged_extractor_args["youtubepot-bgutilhttp"] = http_args
+        if merged_extractor_args:
+            opts["extractor_args"] = merged_extractor_args
         if cookie_file:
             opts["cookiefile"] = cookie_file
         if cookies_from_browser:
@@ -345,11 +416,20 @@ class AudioPipelineService:
         with metadata_path.open("w", encoding="utf-8") as fp:
             json.dump(payload, fp, ensure_ascii=False, indent=2)
 
-    @staticmethod
-    def _cookie_file_path() -> Optional[str]:
-        cookie_file = os.getenv("YTDLP_COOKIE_FILE", "").strip()
-        if cookie_file and Path(cookie_file).exists():
-            return cookie_file
+    def _cookie_file_path(self) -> Optional[str]:
+        env_path = os.getenv("YTDLP_COOKIE_FILE", "").strip()
+        candidates = []
+        if env_path:
+            candidates.append(Path(env_path))
+        candidates.extend(
+            [
+                self.backend_root / "cookies.txt",
+                self.backend_root / "secrets" / "cookies.txt",
+            ]
+        )
+        for candidate in candidates:
+            if candidate.is_file() and candidate.stat().st_size > 0:
+                return str(candidate.resolve())
         return None
 
     @staticmethod

@@ -242,6 +242,7 @@ def _cloud_analysis_status() -> Dict[str, Any]:
         "configured": bool(os.getenv("CLOUD_ANALYSIS_API_BASE", "").strip()),
         "quality_endpoint": os.getenv("CLOUD_ANALYSIS_API_BASE", "").strip(),
         "api_key_configured": bool(os.getenv("CLOUD_ANALYSIS_API_KEY", "").strip()),
+        "timeout_sec": int(os.getenv("CLOUD_ANALYSIS_TIMEOUT_SEC", "900") or "900"),
     }
 
 
@@ -1093,18 +1094,23 @@ async def analyze_music(request: AnalysisRequest):
         if request.quality == "cloud":
             cloud_start = time.perf_counter()
             cloud_response = await run_in_threadpool(_forward_to_cloud_analysis, request)
-            if cloud_response is not None:
-                if not cloud_response.success:
-                    cloud_data = cloud_response.data or {}
-                    _record_analysis_failure(
-                        cache_key=_analysis_cache_key("url", request.url, "cloud"),
-                        quality="cloud",
-                        request_source="analyze",
-                        error=cloud_response.error or "cloud_analysis_failed",
-                        failed_stage=str(cloud_data.get("failed_stage", "cloud_analysis")),
-                        total_sec=time.perf_counter() - cloud_start,
-                    )
-                return cloud_response
+            if cloud_response is None:
+                return _analysis_error_response(
+                    "CLOUD_ANALYSIS_API_BASE is not set. Set it to enable quality=cloud, or use quality=balanced.",
+                    failed_stage="cloud_not_configured",
+                    data={"cloud_configured": False},
+                )
+            if not cloud_response.success:
+                cloud_data = cloud_response.data or {}
+                _record_analysis_failure(
+                    cache_key=_analysis_cache_key("url", request.url, "cloud"),
+                    quality="cloud",
+                    request_source="analyze",
+                    error=cloud_response.error or "cloud_analysis_failed",
+                    failed_stage=str(cloud_data.get("failed_stage", "cloud_analysis")),
+                    total_sec=time.perf_counter() - cloud_start,
+                )
+            return cloud_response
 
         quality = "local_quality" if request.quality == "local_quality" else "balanced"
         cache_key = _analysis_cache_key("url", request.url, quality)

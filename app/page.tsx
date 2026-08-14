@@ -199,6 +199,7 @@ export default function Home() {
   const [activeSection, setActiveSection] = useState<AppSection>('discover')
   const [currentPage, setCurrentPage] = useState<'home' | 'result'>('home')
   const [useRealAnalysis, setUseRealAnalysis] = useState(true)
+  const [useCloudAnalysis, setUseCloudAnalysis] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [tabData, setTabData] = useState<UITabData | null>(null)
   const [analysisNotice, setAnalysisNotice] = useState<AnalysisNotice | null>(null)
@@ -260,6 +261,9 @@ export default function Home() {
   const pipelineLabel = pipelineReady ? '실제 분석 연결됨' : '미리보기 모드'
   const ffmpegReady = Boolean(health?.services?.audio_pipeline?.ffmpeg_available)
   const librosaReady = Boolean(health?.services?.audio_analysis_deps?.librosa)
+  const cloudReady = Boolean(health?.services?.cloud_analysis?.configured)
+  const cookiesReady = Boolean(health?.services?.audio_pipeline?.cookie_file_configured)
+  const potHttpReady = Boolean(health?.services?.audio_pipeline?.pot_http_reachable)
 
   const handleAnalyze = async (overrideUrl?: string) => {
     const targetUrl = (overrideUrl || youtubeUrl).trim()
@@ -279,7 +283,10 @@ export default function Home() {
       let nextData: UITabData
 
       if (useRealAnalysis && pipelineReady) {
-        const result = await RealAudioAPI.analyzeAudio(targetUrl)
+        const result = await RealAudioAPI.analyzeAudio(
+          targetUrl,
+          useCloudAnalysis && cloudReady ? 'cloud' : 'balanced',
+        )
         if (!result.success || !result.data) {
           nextData = await analyzeFromOEmbed(targetUrl)
           setAnalysisNotice({
@@ -440,6 +447,17 @@ export default function Home() {
                   />
                   실제 분석 우선
                 </label>
+                {cloudReady ? (
+                  <label className="flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
+                    <input
+                      checked={useCloudAnalysis}
+                      onChange={(event) => setUseCloudAnalysis(event.target.checked)}
+                      type="checkbox"
+                      className="h-4 w-4 accent-[#ff9f43]"
+                    />
+                    cloud 분석
+                  </label>
+                ) : null}
               </div>
 
               <div className="mt-4 flex flex-col gap-3 sm:flex-row">
@@ -529,8 +547,10 @@ export default function Home() {
                       {health?.services?.audio_pipeline?.yt_dlp_version || '버전 미확인'}
                     </p>
                     <p className="mt-2 text-sm text-white/60">
-                      FFmpeg {ffmpegReady ? '연결됨' : '미연결'} / 쿠키 파일{' '}
-                      {health?.services?.audio_pipeline?.cookie_file_configured ? '설정됨' : '미설정'}
+                      FFmpeg {ffmpegReady ? '연결됨' : '미연결'} / 쿠키{' '}
+                      {cookiesReady ? '설정됨' : '미설정'} / POT HTTP{' '}
+                      {potHttpReady ? '연결됨' : '미연결'} / cloud{' '}
+                      {cloudReady ? '설정됨' : '미설정'}
                     </p>
                   </div>
                 </div>

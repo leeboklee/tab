@@ -143,15 +143,17 @@ npm run dev:backend
 - `REAL_AUDIO_API_BASE`: CLI 테스트와 스모크 테스트가 호출할 실제 분석 서버 주소. 기본값 `http://localhost:8002`
 - `YTDLP_COOKIE_FILE`: 제한 영상 대응용 Netscape 형식 쿠키 파일 경로
 - `YTDLP_COOKIES_FROM_BROWSER`: 브라우저 쿠키 직접 읽기 설정. 예: `chrome`, `edge:Default`
-- (선택) YouTube 봇 감지 우회: `pip install bgutil-ytdlp-pot-provider` 후 PO Token HTTP 서버 기동. 설치되면 추출 전략에 `mweb_with_pot_provider`가 자동 추가됨
+- (선택) YouTube 봇 감지 우회: `pip install bgutil-ytdlp-pot-provider` 후 PO Token HTTP 서버(`http://127.0.0.1:4416`) 기동. 쿠키가 있으면 `cookies_mweb_pot` 시도를 자동 추가. `python-backend/cookies.txt`가 있으면 env 없이도 사용. Cloud Agent IP에서는 쿠키 없이 추출이 막힐 수 있음
+- `YTDLP_POT_BASE_URL`: PO Token HTTP 서버 주소. 기본 탐지 `http://127.0.0.1:4416`
 - `ANALYSIS_RESULT_CACHE_TTL_SEC`: 분석 결과 캐시 TTL(초), 기본 `3600`
 - `ANALYSIS_RESULT_CACHE_MAXSIZE`: 분석 캐시 최대 항목 수, 기본 `256`
 - `ANALYSIS_METRICS_LIMIT`: 최근 요청 메트릭 저장 수, 기본 `200`
 - `ANALYSIS_INFLIGHT_LOCK_TTL_SEC`: single-flight 잠금 유휴 TTL(초), 기본 `3600`
 - `ANALYSIS_INFLIGHT_LOCK_MAXSIZE`: single-flight 잠금 최대 키 수, 기본 `512`
-- `CLOUD_ANALYSIS_API_BASE`: `quality=cloud` 요청 시 포워딩할 클라우드 분석 서버 URL (미설정 시 로컬 분석)
+- `CLOUD_ANALYSIS_API_BASE`: `quality=cloud` 요청 시 포워딩할 클라우드 분석 서버 URL. **미설정이면 `failed_stage=cloud_not_configured`로 실패** (로컬 분석으로 조용히 폴백하지 않음)
 - `CLOUD_ANALYSIS_API_KEY`: 클라우드 분석 API 키 (선택)
 - `CLOUD_ANALYSIS_TIMEOUT_SEC`: 클라우드 분석 타임아웃(초), 기본 `900`
+- 클라우드 서버가 있을 때만 `CLOUD_ANALYSIS_API_BASE=... npm run check:cloud`
 
 ### 클론/환경 이관 체크
 ```bash

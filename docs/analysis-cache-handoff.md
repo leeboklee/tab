@@ -141,5 +141,6 @@ npm run test:smoke:analysis
 
 | 항목 | 상태 | 비고 |
 |------|------|------|
-| ESLint 초기 설정 | 제안만 | [`eslint-setup-proposal.md`](./eslint-setup-proposal.md) — 강제 대변경 금지 |
-| cloud 분석 실서버 연동 | 대기 | `CLOUD_ANALYSIS_API_BASE` 설정 후 수동 검증 |
+| ESLint 초기 설정 | 1단계 적용 | `.eslintrc.json` — `npm run check`에 린트 미포함, 일괄 fix 없음 |
+| cloud 분석 실서버 연동 | 코드 준비 | 미설정 시 `cloud_not_configured`. 실서버는 `CLOUD_ANALYSIS_API_BASE` 필요 |
+| yt-dlp bot/cookies | 로컬 쿠키 경로 강화 | `cookies_mweb_pot` + `python-backend/cookies.txt` 자동 탐지. Cloud IP는 쿠키 없이 실패 가능 |

@@ -10,6 +10,8 @@ python-backend/ffmpeg-master-latest-win64-gpl/
 python-backend/__pycache__/
 python-backend/storage/
 python-backend/venv/
+python-backend/cookies.txt
+python-backend/secrets/
 *.pyc
 **/__pycache__/
 frontend-dev.log

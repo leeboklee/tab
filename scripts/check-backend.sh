@@ -32,7 +32,11 @@ assert d.get('status') == 'healthy', d
 svc = d.get('services', {})
 assert 'analysis_cache' in svc, svc.keys()
 assert 'analysis_inflight_locks' in svc, svc.keys()
-print('[check:backend] health OK cache+locks exposed')
+assert 'cloud_analysis' in svc, svc.keys()
+pipe = svc.get('audio_pipeline') or {}
+for key in ('cookie_file_configured', 'pot_provider_installed', 'pot_http_reachable'):
+    assert key in pipe, pipe.keys()
+print('[check:backend] health OK cache+locks+cloud+yt-dlp diagnostics')
 "
 
 echo "[check:backend] analysis-metrics"
