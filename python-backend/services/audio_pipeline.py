@@ -4,6 +4,7 @@ import os
 import shutil
 import time
 import uuid
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -12,6 +13,66 @@ import yt_dlp
 logger = logging.getLogger(__name__)
 
 AUDIO_EXTENSIONS = (".wav", ".mp3", ".m4a", ".webm", ".ogg", ".opus", ".aac", ".flac")
+
+# YouTube bot detection (PO Token) vs network/proxy blocks need different fixes.
+_BOT_DETECTION_MARKERS = (
+    "sign in to confirm",
+    "not a bot",
+    "requested format is not available",
+    "po_token",
+    "potoken",
+)
+_NETWORK_BLOCK_MARKERS = (
+    "unable to connect to proxy",
+    "tunnel connection failed",
+    "connection refused",
+    "name or service not known",
+    "network is unreachable",
+)
+
+
+def pot_provider_installed() -> bool:
+    """Whether bgutil-ytdlp-pot-provider (or compatible) is installed.
+
+    See https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide
+    The plugin also needs its HTTP server running (default port 4416).
+    """
+    try:
+        importlib_metadata.version("bgutil-ytdlp-pot-provider")
+        return True
+    except importlib_metadata.PackageNotFoundError:
+        return False
+
+
+def classify_extraction_failure(attempts: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Guess failure category from attempt errors and attach an actionable hint."""
+    combined = " ".join(str(a.get("error", "")) for a in attempts).lower()
+
+    if any(marker in combined for marker in _NETWORK_BLOCK_MARKERS):
+        return {
+            "category": "network_blocked",
+            "hint": (
+                "이 프로세스에서 youtube.com 으로 나가는 연결 자체가 막혀 있습니다. "
+                "샌드박스/방화벽/프록시 정책 문제이므로 코드로 해결할 수 없고, "
+                "네트워크 제약이 없는 환경(로컬 PC, 일반 서버)에서 실행해야 합니다."
+            ),
+        }
+
+    if any(marker in combined for marker in _BOT_DETECTION_MARKERS):
+        return {
+            "category": "bot_detection",
+            "hint": (
+                "YouTube가 봇으로 판단해 차단했습니다. "
+                "bgutil-ytdlp-pot-provider(PO Token 플러그인)를 설치하고 "
+                "HTTP 서버를 띄우거나, YTDLP_COOKIE_FILE / YTDLP_COOKIES_FROM_BROWSER 로 "
+                "로그인 쿠키를 제공하면 성공률이 크게 오릅니다."
+            ),
+        }
+
+    return {
+        "category": "unknown",
+        "hint": "attempts의 error 메시지를 직접 확인하세요.",
+    }
 
 
 class AudioExtractionError(RuntimeError):
@@ -44,6 +105,7 @@ class AudioPipelineService:
             "storage_root": str(self.storage_root),
             "cookie_file_configured": bool(self._cookie_file_path()),
             "cookies_from_browser_configured": bool(self._cookies_from_browser()),
+            "pot_provider_installed": pot_provider_installed(),
         }
 
     def extract_audio(self, url: str) -> Dict[str, Any]:
@@ -82,10 +144,15 @@ class AudioPipelineService:
                 logger.warning("Audio extraction attempt failed (%s): %s", name, exc)
 
         if not info or not audio_path:
+            failure = classify_extraction_failure(attempts)
             diagnostics = self.diagnostics()
             diagnostics["attempts"] = attempts
+            diagnostics["failure"] = failure
             self._write_failure_record(work_dir, url, diagnostics)
-            raise AudioExtractionError("Failed to extract audio from YouTube", diagnostics=diagnostics)
+            raise AudioExtractionError(
+                f"Failed to extract audio from YouTube ({failure['category']}): {failure['hint']}",
+                diagnostics=diagnostics,
+            )
 
         record = self._build_record(url=url, extraction_id=extraction_id, info=info, audio_path=audio_path, attempts=attempts)
         self._write_record(work_dir, record)
@@ -114,6 +181,18 @@ class AudioPipelineService:
                 ),
             },
         ]
+
+        if pot_provider_installed():
+            # Plugin auto-attaches PO tokens; mweb is the strongest client per yt-dlp wiki.
+            specs.append(
+                {
+                    "name": "mweb_with_pot_provider",
+                    "opts": self._build_ydl_opts(
+                        work_dir,
+                        extractor_args={"youtube": {"player_client": ["mweb"]}},
+                    ),
+                }
+            )
 
         cookie_file = self._cookie_file_path()
         if cookie_file:
