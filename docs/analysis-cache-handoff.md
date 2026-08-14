@@ -107,10 +107,20 @@ npm run test:smoke:analysis
 
 - **큐:** 없음 (단일 Codex goal 완료)
 - **검증:** build / check:backend / smoke Pass
-- **커밋/푸시:** `3c14196` → `origin/feat/analysis-cache-inflight` + PR #1
+- **커밋/푸시:** `3c14196` → `origin/feat/analysis-cache-inflight` + PR #1; Cursor 보완 커밋 추가
 - **handoff:** 본 문서
 - **Cloud Agent:** https://cursor.com/agents/bc-dc3063f1-8cfa-4a45-a5ab-5016428bb516
 - **백로그(큐 아님):** ESLint 초기 설정 프롬프트, cloud 분석 실서버 연동
+
+### Cursor Agent 검증 (2026-08-13)
+
+- `npm run build` — Pass
+- `npm run check:backend` — Pass (cache + inflight locks in `/health`, `/analysis-metrics`)
+- `npm run test:smoke:analysis` — Pass (1/2 URL; 2번째는 yt-dlp bot/cookies 이슈, 기존 한계)
+- 캐시 hit 재요청 — `cached_age_sec` 확인 (~80ms)
+- `npm run lint` — 스킵 (ESLint 미설정)
+- cloud 실서버 — 스킵 (`CLOUD_ANALYSIS_API_BASE` 미설정)
+- 보완: cloud 실패 시 `analysis-metrics` 기록, `.env.example` 캐시/cloud 변수
 
 ### Cursor Cloud 이어받기
 

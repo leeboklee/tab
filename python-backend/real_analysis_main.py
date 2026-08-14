@@ -1091,8 +1091,19 @@ async def analyze_from_audio(request: AnalyzeFromAudioRequest):
 async def analyze_music(request: AnalysisRequest):
     try:
         if request.quality == "cloud":
+            cloud_start = time.perf_counter()
             cloud_response = await run_in_threadpool(_forward_to_cloud_analysis, request)
             if cloud_response is not None:
+                if not cloud_response.success:
+                    cloud_data = cloud_response.data or {}
+                    _record_analysis_failure(
+                        cache_key=_analysis_cache_key("url", request.url, "cloud"),
+                        quality="cloud",
+                        request_source="analyze",
+                        error=cloud_response.error or "cloud_analysis_failed",
+                        failed_stage=str(cloud_data.get("failed_stage", "cloud_analysis")),
+                        total_sec=time.perf_counter() - cloud_start,
+                    )
                 return cloud_response
 
         quality = "local_quality" if request.quality == "local_quality" else "balanced"
