@@ -18,4 +18,8 @@ playwright-report/
 test-results/
 backend-restart.log
 backend-restart.err
+.antigravitycli/
+.playwright-cli/
+output/
+추천-PC-구성안.md
 
