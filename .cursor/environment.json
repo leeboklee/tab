@@ -1,0 +1,19 @@
+{
+  "name": "Guitar2Tabs",
+  "user": "node",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "backend",
+      "command": "npm run dev:backend"
+    },
+    {
+      "name": "frontend",
+      "command": "npm run dev:frontend"
+    }
+  ],
+  "ports": [3019, 8002]
+}

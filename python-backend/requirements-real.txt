@@ -9,3 +9,5 @@ numpy==1.24.3
 scipy==1.11.4
 soundfile==0.12.1
 ffmpeg-python==0.2.0
+cachetools==5.5.1
+requests==2.31.0
