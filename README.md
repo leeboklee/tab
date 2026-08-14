@@ -148,6 +148,9 @@ npm run dev:backend
 - `ANALYSIS_METRICS_LIMIT`: 최근 요청 메트릭 저장 수, 기본 `200`
 - `ANALYSIS_INFLIGHT_LOCK_TTL_SEC`: single-flight 잠금 유휴 TTL(초), 기본 `3600`
 - `ANALYSIS_INFLIGHT_LOCK_MAXSIZE`: single-flight 잠금 최대 키 수, 기본 `512`
+- `CLOUD_ANALYSIS_API_BASE`: `quality=cloud` 요청 시 포워딩할 클라우드 분석 서버 URL (미설정 시 로컬 분석)
+- `CLOUD_ANALYSIS_API_KEY`: 클라우드 분석 API 키 (선택)
+- `CLOUD_ANALYSIS_TIMEOUT_SEC`: 클라우드 분석 타임아웃(초), 기본 `900`
 
 ### 클론/환경 이관 체크
 ```bash

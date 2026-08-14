@@ -25,6 +25,16 @@ export interface AudioHealthResponse {
       configured?: boolean
       api_key_configured?: boolean
     }
+    analysis_cache?: {
+      maxsize?: number
+      ttl_sec?: number
+      current_size?: number
+    }
+    analysis_inflight_locks?: {
+      maxsize?: number
+      ttl_sec?: number
+      current_size?: number
+    }
     high_quality?: {
       demucs_available?: boolean
       cuda_available?: boolean

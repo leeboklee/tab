@@ -107,7 +107,7 @@ npm run test:smoke:analysis
 
 - **큐:** 없음 (단일 Codex goal 완료)
 - **검증:** build / check:backend / smoke Pass
-- **커밋/푸시:** `3c14196` → `origin/feat/analysis-cache-inflight` + PR #1; Cursor 보완 커밋 추가
+- **커밋/푸시:** PR #1 머지 완료 → `main` @ `7fd1eed`
 - **handoff:** 본 문서
 - **Cloud Agent:** https://cursor.com/agents/bc-dc3063f1-8cfa-4a45-a5ab-5016428bb516
 - **백로그(큐 아님):** ESLint 초기 설정 프롬프트, cloud 분석 실서버 연동
@@ -124,6 +124,22 @@ npm run test:smoke:analysis
 
 ### Cursor Cloud 이어받기
 
-- PR: https://github.com/leeboklee/tab/pull/1
-- Agent: https://cursor.com/agents/bc-dc3063f1-8cfa-4a45-a5ab-5016428bb516
-- 지시: PR 리뷰·안전 보완만, 머지 금지
+- PR #1: https://github.com/leeboklee/tab/pull/1 — **머지 완료** (`7fd1eed` on `main`)
+- 이전 Agent: https://cursor.com/agents/bc-dc3063f1-8cfa-4a45-a5ab-5016428bb516 (FINISHED)
+- 현재 Agent: https://cursor.com/agents/bc-e0571e2b-7aff-43e4-92d5-7968fbb0e8fb
+- 지시: 백로그 중 안전 항목만, main 직푸시·머지 금지
+
+### Cursor Agent 검증 (2026-08-14, main `7fd1eed`)
+
+- `npm run build` — Pass
+- `npm run check:backend` — Pass (cache + inflight locks in `/health`, `/analysis-metrics`)
+- `npm run test:smoke:analysis` — Pass (yt-dlp bot/cookies 이슈, 기존 한계)
+- `npm run lint` — 스킵 (ESLint 미설정, 대화형 프롬프트) → [`eslint-setup-proposal.md`](./eslint-setup-proposal.md) 참고
+- cloud 실서버 — 스킵 (`CLOUD_ANALYSIS_API_BASE` 미설정)
+
+### 백로그 (큐 아님)
+
+| 항목 | 상태 | 비고 |
+|------|------|------|
+| ESLint 초기 설정 | 제안만 | [`eslint-setup-proposal.md`](./eslint-setup-proposal.md) — 강제 대변경 금지 |
+| cloud 분석 실서버 연동 | 대기 | `CLOUD_ANALYSIS_API_BASE` 설정 후 수동 검증 |
