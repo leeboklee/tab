@@ -9,6 +9,8 @@
     "dev:all": "npm run dev",
     "build": "next build",
     "start": "next start -p 3019",
+    "start:public": "bash scripts/start-public.sh",
+    "tunnel": "bash scripts/start-tunnel.sh",
     "lint": "next lint",
     "check:backend": "bash scripts/check-backend.sh",
     "check:cloud": "bash scripts/check-cloud.sh",

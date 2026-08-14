@@ -27,9 +27,22 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Guitar2Tabs Real Analysis API", version="2.0.0")
 
+def _cors_allow_origins() -> List[str]:
+    origins = [
+        "http://localhost:3019",
+        "http://localhost:5958",
+        "http://localhost:3000",
+        "http://127.0.0.1:3019",
+    ]
+    extra = os.getenv("CORS_ALLOW_ORIGINS", "").strip()
+    if extra:
+        origins.extend(part.strip() for part in extra.split(",") if part.strip())
+    return origins
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3019", "http://localhost:5958", "http://localhost:3000", "http://127.0.0.1:3019"],
+    allow_origins=_cors_allow_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

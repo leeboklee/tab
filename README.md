@@ -134,6 +134,37 @@ npm run dev:backend
 - 이미 `8002`에서 정상 서버가 돌고 있으면 재기동하지 않고 재사용
 - `8002`가 죽은 프로세스로 점유된 상태면 PID를 알려주고 중지
 
+## 친구 공유 (집 PC 상시 — `npm run dev` 아님)
+
+Vercel/Cursor Cloud로는 유튜브 추출이 안 됩니다. **집 PC를 켜 두고** 프론트+백엔드를 띄운 뒤 Cloudflare로 URL을 줍니다.
+
+```bash
+# 1) 최초 1회
+cp .env.example .env.local
+# .env.local 에 YTDLP_COOKIES_FROM_BROWSER=chrome 추가 (Chrome 유튜브 로그인)
+
+npm install
+npm run python:install
+
+# 2) 서버 (이 터미널은 끄지 않음)
+npm run start:public
+
+# 3) 다른 터미널 — 임시 공개 URL
+npm run tunnel
+```
+
+`npm run tunnel` 주소는 재시작마다 바뀝니다. 친구용 **고정 URL**은 Cloudflare 계정으로 named tunnel:
+
+```bash
+cloudflared tunnel login
+cloudflared tunnel create guitar2tabs
+# 대시보드에서 hostname(예: tab.example.com) → 그 터널에 연결
+cloudflared tunnel run guitar2tabs
+```
+
+- PC가 꺼지거나 절전하면 친구 접속도 끊김
+- 쿠키는 그 PC의 Chrome/cookies.txt 기준
+
 ## 운영 메모
 
 ### 환경 변수
