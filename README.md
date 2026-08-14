@@ -143,6 +143,7 @@ npm run dev:backend
 - `REAL_AUDIO_API_BASE`: CLI 테스트와 스모크 테스트가 호출할 실제 분석 서버 주소. 기본값 `http://localhost:8002`
 - `YTDLP_COOKIE_FILE`: 제한 영상 대응용 Netscape 형식 쿠키 파일 경로
 - `YTDLP_COOKIES_FROM_BROWSER`: 브라우저 쿠키 직접 읽기 설정. 예: `chrome`, `edge:Default`
+- (선택) YouTube 봇 감지 우회: `pip install bgutil-ytdlp-pot-provider` 후 PO Token HTTP 서버 기동. 설치되면 추출 전략에 `mweb_with_pot_provider`가 자동 추가됨
 - `ANALYSIS_RESULT_CACHE_TTL_SEC`: 분석 결과 캐시 TTL(초), 기본 `3600`
 - `ANALYSIS_RESULT_CACHE_MAXSIZE`: 분석 캐시 최대 항목 수, 기본 `256`
 - `ANALYSIS_METRICS_LIMIT`: 최근 요청 메트릭 저장 수, 기본 `200`
@@ -244,7 +245,7 @@ guitar2tabs/
 1. **포트 충돌**: `3019`, `8002` 점유 프로세스를 먼저 정리
 2. **의존성 오류**: `npm install` 또는 `pip install -r requirements.txt` 재실행
 3. **분석 실패**: `http://localhost:8002/health`에서 `ffmpeg_available`, `librosa` 상태 확인
-4. **제한 영상 실패**: `YTDLP_COOKIE_FILE` 또는 `YTDLP_COOKIES_FROM_BROWSER` 설정
+4. **제한 영상 / 봇 감지 실패**: 쿠키(`YTDLP_*`) 또는 `bgutil-ytdlp-pot-provider` 설치. 에러 메시지의 `network_blocked` / `bot_detection` 분류를 확인
 
 ### 로그 확인
 ```bash
