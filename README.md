@@ -134,6 +134,16 @@ npm run dev:backend
 - 이미 `8002`에서 정상 서버가 돌고 있으면 재기동하지 않고 재사용
 - `8002`가 죽은 프로세스로 점유된 상태면 PID를 알려주고 중지
 
+## Vercel (프론트만, GitHub 연동)
+
+유튜브 추출 Python은 Vercel에서 안 돌아갑니다. **화면만** `main` 푸시 때 자동 배포됩니다.
+
+1. https://vercel.com/new 에서 `leeboklee/tab` Import (이 Cloud Agent는 Vercel 로그인 불가)
+2. Framework Preset: Next.js
+3. Production Branch: `main`
+
+이후 `main` 머지/푸시 → Vercel이 다시 빌드. PR 자동머지를 이 repo에 켜 두지는 않습니다.
+
 ## 친구 공유 (집 PC 상시 — `npm run dev` 아님)
 
 Vercel/Cursor Cloud로는 유튜브 추출이 안 됩니다. **집 PC를 켜 두고** 프론트+백엔드를 띄운 뒤 Cloudflare로 URL을 줍니다.
