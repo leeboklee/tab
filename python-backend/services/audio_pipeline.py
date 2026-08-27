@@ -63,9 +63,10 @@ def classify_extraction_failure(attempts: List[Dict[str, Any]]) -> Dict[str, Any
             "category": "bot_detection",
             "hint": (
                 "YouTube가 봇으로 판단해 차단했습니다. "
-                "bgutil-ytdlp-pot-provider(PO Token 플러그인)를 설치하고 "
-                "HTTP 서버를 띄우거나, YTDLP_COOKIE_FILE / YTDLP_COOKIES_FROM_BROWSER 로 "
-                "로그인 쿠키를 제공하면 성공률이 크게 오릅니다."
+                "1) 홈/주거용 IP에서 YTDLP_COOKIE_FILE 또는 YTDLP_COOKIES_FROM_BROWSER 설정 "
+                "2) bgutil-ytdlp-pot-provider(PO Token) HTTP 서버(:4416) 기동 "
+                "3) 친구가 코딩 없이 쓰려면 음원 파일 업로드(/upload-audio)를 사용하세요. "
+                "데이터센터/클라우드 IP는 쿠키+클라이언트 전환이 있어도 자주 실패합니다."
             ),
         }
 
@@ -167,23 +168,102 @@ class AudioPipelineService:
             record = json.load(fp)
         return record
 
+    def ingest_uploaded_audio(
+        self,
+        *,
+        filename: str,
+        data: bytes,
+        title: Optional[str] = None,
+        artist: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Save a user-uploaded audio file as an extractable analysis record.
+
+        Friend-friendly path when YouTube bot detection blocks URL extraction.
+        """
+        if not data:
+            raise ValueError("Uploaded audio is empty")
+
+        suffix = Path(filename or "upload.wav").suffix.lower()
+        if suffix not in AUDIO_EXTENSIONS:
+            raise ValueError(
+                f"Unsupported audio type '{suffix or '(none)'}'. "
+                f"Allowed: {', '.join(AUDIO_EXTENSIONS)}"
+            )
+
+        max_bytes = self._upload_max_bytes()
+        if len(data) > max_bytes:
+            raise ValueError(f"Audio file too large (max {max_bytes // (1024 * 1024)}MB)")
+
+        extraction_id = str(uuid.uuid4())
+        work_dir = self.storage_root / extraction_id
+        work_dir.mkdir(parents=True, exist_ok=True)
+        audio_path = work_dir / f"upload{suffix}"
+        audio_path.write_bytes(data)
+
+        stem = Path(filename).stem.strip() or "Uploaded Audio"
+        record = {
+            "audio_id": extraction_id,
+            "source_url": f"upload://{filename}",
+            "source_video_id": extraction_id,
+            "source_type": "upload",
+            "title": (title or stem).strip() or "Uploaded Audio",
+            "artist": (artist or "Uploaded").strip() or "Uploaded",
+            "duration": 0,
+            "thumbnail": "",
+            "upload_date": "",
+            "view_count": 0,
+            "audio_path": str(audio_path.resolve()),
+            "audio_ext": suffix.replace(".", ""),
+            "audio_size_bytes": audio_path.stat().st_size,
+            "original_filename": filename,
+            "extracted_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "attempts": [{"name": "user_upload", "status": "success", "elapsed_sec": 0}],
+            "diagnostics": self.diagnostics(),
+        }
+        self._write_record(work_dir, record)
+        return record
+
     def _attempt_specs(self, work_dir: Path) -> List[Dict[str, Any]]:
-        specs = [
+        # Community-recommended clients (yt-dlp wiki / 2025-2026 bot guidance):
+        # android_vr / tv+web_safari / web_embedded often work without cookies on residential IPs.
+        # Datacenter IPs still frequently need cookies + PO tokens.
+        specs: List[Dict[str, Any]] = [
+            {
+                "name": "android_vr",
+                "opts": self._build_ydl_opts(
+                    work_dir,
+                    extractor_args={"youtube": {"player_client": ["android_vr"]}},
+                ),
+            },
+            {
+                "name": "tv_web_safari",
+                "opts": self._build_ydl_opts(
+                    work_dir,
+                    extractor_args={"youtube": {"player_client": ["tv", "web_safari"]}},
+                ),
+            },
+            {
+                "name": "web_embedded",
+                "opts": self._build_ydl_opts(
+                    work_dir,
+                    extractor_args={"youtube": {"player_client": ["web_embedded"]}},
+                ),
+            },
             {
                 "name": "default_best_audio",
                 "opts": self._build_ydl_opts(work_dir),
             },
             {
-                "name": "youtube_tv_web_clients",
+                "name": "ios_android",
                 "opts": self._build_ydl_opts(
                     work_dir,
-                    extractor_args={"youtube": {"player_client": ["tv", "web", "mweb"]}},
+                    extractor_args={"youtube": {"player_client": ["ios", "android"]}},
                 ),
             },
         ]
 
         if pot_provider_installed():
-            # Plugin auto-attaches PO tokens; mweb is the strongest client per yt-dlp wiki.
+            # Plugin auto-attaches PO tokens when HTTP provider is reachable (:4416).
             specs.append(
                 {
                     "name": "mweb_with_pot_provider",
@@ -193,13 +273,39 @@ class AudioPipelineService:
                     ),
                 }
             )
+            specs.append(
+                {
+                    "name": "web_safari_with_pot_provider",
+                    "opts": self._build_ydl_opts(
+                        work_dir,
+                        extractor_args={"youtube": {"player_client": ["web_safari"]}},
+                    ),
+                }
+            )
 
         cookie_file = self._cookie_file_path()
         if cookie_file:
+            # With cookies, avoid web_creator (often needs PO token → 403). See yt-dlp#12085.
             specs.append(
                 {
-                    "name": "with_cookie_file",
-                    "opts": self._build_ydl_opts(work_dir, cookie_file=cookie_file),
+                    "name": "cookie_file_default_minus_web_creator",
+                    "opts": self._build_ydl_opts(
+                        work_dir,
+                        cookie_file=cookie_file,
+                        extractor_args={
+                            "youtube": {"player_client": ["default", "-web_creator"]}
+                        },
+                    ),
+                }
+            )
+            specs.append(
+                {
+                    "name": "cookie_file_web_safari",
+                    "opts": self._build_ydl_opts(
+                        work_dir,
+                        cookie_file=cookie_file,
+                        extractor_args={"youtube": {"player_client": ["web_safari"]}},
+                    ),
                 }
             )
 
@@ -207,8 +313,24 @@ class AudioPipelineService:
         if cookies_from_browser:
             specs.append(
                 {
-                    "name": "with_browser_cookies",
-                    "opts": self._build_ydl_opts(work_dir, cookies_from_browser=cookies_from_browser),
+                    "name": "browser_cookies_default_minus_web_creator",
+                    "opts": self._build_ydl_opts(
+                        work_dir,
+                        cookies_from_browser=cookies_from_browser,
+                        extractor_args={
+                            "youtube": {"player_client": ["default", "-web_creator"]}
+                        },
+                    ),
+                }
+            )
+            specs.append(
+                {
+                    "name": "browser_cookies_web_safari",
+                    "opts": self._build_ydl_opts(
+                        work_dir,
+                        cookies_from_browser=cookies_from_browser,
+                        extractor_args={"youtube": {"player_client": ["web_safari"]}},
+                    ),
                 }
             )
 
@@ -232,6 +354,8 @@ class AudioPipelineService:
             "socket_timeout": 30,
             "skip_download": False,
             "format_sort": ["hasaud", "acodec", "abr", "asr"],
+            # Pace requests slightly — burst patterns look more automated to YouTube.
+            "sleep_interval_requests": float(os.getenv("YTDLP_SLEEP_REQUESTS", "0.5") or "0.5"),
         }
 
         if extractor_args:
@@ -252,6 +376,15 @@ class AudioPipelineService:
             ]
 
         return opts
+
+    @staticmethod
+    def _upload_max_bytes() -> int:
+        raw = os.getenv("UPLOAD_AUDIO_MAX_MB", "80").strip()
+        try:
+            mb = int(raw)
+        except ValueError:
+            mb = 80
+        return max(1, mb) * 1024 * 1024
 
     def _download_audio(
         self, url: str, work_dir: Path, ydl_opts: Dict[str, Any]

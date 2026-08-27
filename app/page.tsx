@@ -12,6 +12,7 @@ import {
   ListMusic,
   Search,
   Sparkles,
+  Upload,
   Wand2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -196,6 +197,7 @@ async function analyzeFromOEmbed(url: string): Promise<UITabData> {
 
 export default function Home() {
   const [youtubeUrl, setYoutubeUrl] = useState('')
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [activeSection, setActiveSection] = useState<AppSection>('discover')
   const [currentPage, setCurrentPage] = useState<'home' | 'result'>('home')
   const [useRealAnalysis, setUseRealAnalysis] = useState(true)
@@ -281,13 +283,27 @@ export default function Home() {
       if (useRealAnalysis && pipelineReady) {
         const result = await RealAudioAPI.analyzeAudio(targetUrl)
         if (!result.success || !result.data) {
+          const failedStage = result.data?.failed_stage
+          const failureCategory =
+            result.data?.diagnostics?.failure?.category || result.data?.diagnostics?.category
+          const isBotBlock =
+            failedStage === 'youtube_extraction' ||
+            failureCategory === 'bot_detection' ||
+            String(result.error || '').toLowerCase().includes('bot')
           nextData = await analyzeFromOEmbed(targetUrl)
           setAnalysisNotice({
             mode: 'preview_only',
-            title: '실패 후 미리보기 전환',
-            detail: result.error || '실제 분석 실패로 미리보기 결과를 대신 표시합니다.',
+            title: isBotBlock ? 'YouTube 차단 — 음원 업로드 권장' : '실패 후 미리보기 전환',
+            detail: isBotBlock
+              ? `${result.error || 'YouTube 봇 차단'}\n아래 음원 파일 업로드로 같은 분석을 할 수 있습니다.`
+              : result.error || '실제 분석 실패로 미리보기 결과를 대신 표시합니다.',
           })
-          toast('실제 분석이 실패해 미리보기 결과로 전환했습니다.', { icon: '⚠️' })
+          toast(
+            isBotBlock
+              ? 'YouTube 추출이 막혔습니다. 음원 파일을 업로드해 보세요.'
+              : '실제 분석이 실패해 미리보기 결과로 전환했습니다.',
+            { icon: '⚠️' }
+          )
         } else {
           nextData = result.data as UITabData
           const resultMode = nextData.metadata?.result_mode === 'audio_verified' ? 'audio_verified' : 'metadata_fallback'
@@ -323,6 +339,47 @@ export default function Home() {
     } catch (error) {
       console.error(error)
       toast(`분석 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`, { icon: '❌' })
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
+
+  const handleAnalyzeUpload = async () => {
+    if (!uploadFile) {
+      toast('분석할 음원 파일을 선택하세요.', { icon: '⚠️' })
+      return
+    }
+    if (!pipelineReady) {
+      toast('실제 분석 서버가 필요합니다. 서버를 먼저 실행하세요.', { icon: '❌' })
+      return
+    }
+
+    setIsAnalyzing(true)
+    try {
+      const result = await RealAudioAPI.analyzeUpload(uploadFile, {
+        title: uploadFile.name.replace(/\.[^.]+$/, ''),
+      })
+      if (!result.success || !result.data) {
+        toast(`업로드 분석 실패: ${result.error || '알 수 없는 오류'}`, { icon: '❌' })
+        return
+      }
+
+      const nextData = result.data as UITabData
+      const resultMode = nextData.metadata?.result_mode === 'audio_verified' ? 'audio_verified' : 'metadata_fallback'
+      setAnalysisNotice({
+        mode: resultMode,
+        title: '업로드 음원 분석 완료',
+        detail:
+          nextData.metadata?.status_summary ||
+          'YouTube 없이 업로드한 음원으로 분석을 완료했습니다.',
+      })
+      setTabData(nextData)
+      setCurrentPage('result')
+      setActiveSection('workspace')
+      toast('업로드 음원 분석을 완료했습니다.', { icon: '✅' })
+    } catch (error) {
+      console.error(error)
+      toast(`업로드 분석 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`, { icon: '❌' })
     } finally {
       setIsAnalyzing(false)
     }
@@ -472,6 +529,46 @@ export default function Home() {
                     샘플 실행
                   </button>
                 ))}
+              </div>
+
+              <div className="mt-5 border-t border-white/10 pt-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-white/60">또는 음원 파일 업로드</p>
+                    <p className="mt-1 text-xs text-white/45">
+                      YouTube 봇 차단 시 / 코딩 없이 쓰는 친구용 — mp3, wav, m4a, webm, flac
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <label className="flex min-h-[56px] flex-1 cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-white/20 bg-white/[0.03] px-4 text-sm text-white/70 transition hover:border-[#ff9f43]/50 hover:bg-white/[0.05]">
+                    <Upload className="h-5 w-5 shrink-0 text-[#ffcf66]" />
+                    <span className="truncate">
+                      {uploadFile ? uploadFile.name : '파일 선택 (최대 약 80MB)'}
+                    </span>
+                    <input
+                      type="file"
+                      accept=".wav,.mp3,.m4a,.webm,.ogg,.opus,.aac,.flac,audio/*"
+                      className="hidden"
+                      onChange={(event) => {
+                        const next = event.target.files?.[0] || null
+                        setUploadFile(next)
+                      }}
+                    />
+                  </label>
+                  <button
+                    onClick={() => void handleAnalyzeUpload()}
+                    disabled={isAnalyzing || !uploadFile}
+                    className="inline-flex min-h-[56px] items-center justify-center gap-2 rounded-2xl border border-[#ffcf66]/40 bg-[#ffcf66]/12 px-5 font-semibold text-[#ffcf66] transition hover:bg-[#ffcf66]/20 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    {isAnalyzing ? (
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#ffcf66]/25 border-t-[#ffcf66]" />
+                    ) : (
+                      <Upload className="h-5 w-5" />
+                    )}
+                    <span>{isAnalyzing ? '분석 중' : '업로드 분석'}</span>
+                  </button>
+                </div>
               </div>
             </div>
           </motion.div>

@@ -14,7 +14,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 import requests
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
@@ -1043,6 +1043,77 @@ async def extract_audio(request: AnalysisRequest):
     except Exception as exc:
         logger.error("Unexpected extraction error: %s", exc)
         return _analysis_error_response(str(exc), failed_stage="youtube_extraction")
+
+
+@app.post("/upload-audio", response_model=ApiResponse)
+async def upload_audio(
+    file: UploadFile = File(..., description="Audio file (wav/mp3/m4a/...)"),
+    title: Optional[str] = Form(None),
+    artist: Optional[str] = Form(None),
+):
+    """Friend-friendly path: upload local audio when YouTube URL extraction is blocked."""
+    try:
+        payload = await file.read()
+        filename = file.filename or "upload.wav"
+
+        def _ingest() -> Dict[str, Any]:
+            return pipeline.ingest_uploaded_audio(
+                filename=filename,
+                data=payload,
+                title=title,
+                artist=artist,
+            )
+
+        record = await run_in_threadpool(_ingest)
+        return ApiResponse(success=True, data=record)
+    except ValueError as exc:
+        logger.warning("Upload rejected: %s", exc)
+        return _analysis_error_response(str(exc), failed_stage="audio_upload")
+    except Exception as exc:
+        logger.error("Upload failed: %s", exc)
+        return _analysis_error_response(str(exc), failed_stage="audio_upload")
+
+
+@app.post("/analyze-upload", response_model=ApiResponse)
+async def analyze_upload(
+    file: UploadFile = File(..., description="Audio file (wav/mp3/m4a/...)"),
+    title: Optional[str] = Form(None),
+    artist: Optional[str] = Form(None),
+    quality: str = Form("balanced"),
+):
+    """Upload audio then run analysis in one request (no YouTube dependency)."""
+    try:
+        payload = await file.read()
+        filename = file.filename or "upload.wav"
+
+        def _ingest() -> Dict[str, Any]:
+            return pipeline.ingest_uploaded_audio(
+                filename=filename,
+                data=payload,
+                title=title,
+                artist=artist,
+            )
+
+        record = await run_in_threadpool(_ingest)
+        resolved_quality = "local_quality" if quality == "local_quality" else "balanced"
+        cache_key = _analysis_cache_key("audio_id", record["audio_id"], resolved_quality)
+
+        async def compute() -> Tuple[Dict[str, Any], Optional[float], Dict[str, Any]]:
+            data = await run_in_threadpool(_analyze_record, record, resolved_quality)
+            return data, None, {"source_type": "upload", "audio_id": record["audio_id"]}
+
+        return await _run_cached_analysis(
+            cache_key=cache_key,
+            quality=resolved_quality,
+            request_source="analyze_upload",
+            compute=compute,
+        )
+    except ValueError as exc:
+        logger.warning("Analyze-upload rejected: %s", exc)
+        return _analysis_error_response(str(exc), failed_stage="audio_upload")
+    except Exception as exc:
+        logger.error("Analyze-upload failed: %s", exc)
+        return _analysis_error_response(str(exc), failed_stage=_failed_stage_for_exception(exc))
 
 
 @app.get("/audio/{audio_id}", response_model=ApiResponse)
