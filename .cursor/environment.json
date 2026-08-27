@@ -1,0 +1,16 @@
+{
+  "name": "Guitar2Tabs",
+  "install": "npm ci\ncp -n .env.example .env.local || true\ncd python-backend && python3 -m venv venv && ./venv/bin/pip install -r requirements-minimal.txt cachetools==5.5.1 aiofiles python-dotenv",
+  "start": "npm run dev",
+  "ports": [
+    { "name": "Next.js frontend", "port": 3019 },
+    { "name": "FastAPI analysis API", "port": 8002 }
+  ],
+  "terminals": [
+    {
+      "name": "dev",
+      "command": "npm run dev",
+      "description": "Next.js :3019 + FastAPI real analysis :8002"
+    }
+  ]
+}
