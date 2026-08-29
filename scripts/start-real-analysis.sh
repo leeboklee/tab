@@ -21,6 +21,9 @@ if [ ! -z "$PID" ]; then
   exit 1
 fi
 
+echo "[backend] preparing YouTube relay (tor / PO token)"
+bash "$(dirname "$0")/start-youtube-relay.sh"
+
 echo "[backend] starting real_analysis_main.py on :$PORT"
 cd "$(dirname "$0")/../python-backend"
 

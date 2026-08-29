@@ -14,6 +14,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 import requests
 import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -21,6 +22,10 @@ from starlette.concurrency import run_in_threadpool
 from cachetools import TTLCache
 
 from services.audio_pipeline import AudioExtractionError, AudioPipelineService
+
+_repo_root = Path(__file__).resolve().parents[1]
+load_dotenv(_repo_root / ".env.local", override=False)
+load_dotenv(_repo_root / ".env", override=False)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

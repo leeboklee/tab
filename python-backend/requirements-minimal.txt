@@ -3,6 +3,7 @@ uvicorn[standard]
 pydantic
 python-multipart
 yt-dlp
+bgutil-ytdlp-pot-provider
 requests
 numpy
 scipy

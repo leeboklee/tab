@@ -2,11 +2,13 @@ import json
 import logging
 import os
 import shutil
+import socket
 import time
 import uuid
 from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import yt_dlp
 
@@ -63,10 +65,10 @@ def classify_extraction_failure(attempts: List[Dict[str, Any]]) -> Dict[str, Any
             "category": "bot_detection",
             "hint": (
                 "YouTube가 봇으로 판단해 차단했습니다. "
-                "1) 홈/주거용 IP에서 YTDLP_COOKIE_FILE 또는 YTDLP_COOKIES_FROM_BROWSER 설정 "
-                "2) bgutil-ytdlp-pot-provider(PO Token) HTTP 서버(:4416) 기동 "
-                "3) 친구가 코딩 없이 쓰려면 음원 파일 업로드(/upload-audio)를 사용하세요. "
-                "데이터센터/클라우드 IP는 쿠키+클라이언트 전환이 있어도 자주 실패합니다."
+                "1) 서버에 YTDLP_USE_TOR=true 또는 YTDLP_PROXY 설정 (클라우드/데이터센터 IP) "
+                "2) 홈/주거용 IP에서 YTDLP_COOKIE_FILE 또는 YTDLP_COOKIES_FROM_BROWSER "
+                "3) bgutil-ytdlp-pot-provider(PO Token) HTTP 서버(:4416) 기동 "
+                "4) 그래도 안 되면 음원 파일 업로드(/upload-audio)를 사용하세요."
             ),
         }
 
@@ -98,6 +100,7 @@ class AudioPipelineService:
         self.yt_dlp_version = yt_dlp.version.__version__
 
     def diagnostics(self) -> Dict[str, Any]:
+        proxy = self._effective_proxy()
         return {
             "yt_dlp_version": self.yt_dlp_version,
             "ffmpeg_available": bool(self.ffmpeg_path),
@@ -107,6 +110,10 @@ class AudioPipelineService:
             "cookie_file_configured": bool(self._cookie_file_path()),
             "cookies_from_browser_configured": bool(self._cookies_from_browser()),
             "pot_provider_installed": pot_provider_installed(),
+            "proxy_configured": bool(proxy),
+            "proxy_url": proxy or "",
+            "tor_auto_enabled": self._env_flag("YTDLP_AUTO_TOR", default=True),
+            "tor_use_enabled": self._env_flag("YTDLP_USE_TOR", default=False),
         }
 
     def extract_audio(self, url: str) -> Dict[str, Any]:
@@ -226,41 +233,42 @@ class AudioPipelineService:
     def _attempt_specs(self, work_dir: Path) -> List[Dict[str, Any]]:
         # Community-recommended clients (yt-dlp wiki / 2025-2026 bot guidance):
         # android_vr / tv+web_safari / web_embedded often work without cookies on residential IPs.
-        # Datacenter IPs still frequently need cookies + PO tokens.
-        specs: List[Dict[str, Any]] = [
-            {
-                "name": "android_vr",
-                "opts": self._build_ydl_opts(
-                    work_dir,
-                    extractor_args={"youtube": {"player_client": ["android_vr"]}},
-                ),
-            },
-            {
-                "name": "tv_web_safari",
-                "opts": self._build_ydl_opts(
-                    work_dir,
-                    extractor_args={"youtube": {"player_client": ["tv", "web_safari"]}},
-                ),
-            },
-            {
-                "name": "web_embedded",
-                "opts": self._build_ydl_opts(
-                    work_dir,
-                    extractor_args={"youtube": {"player_client": ["web_embedded"]}},
-                ),
-            },
-            {
-                "name": "default_best_audio",
-                "opts": self._build_ydl_opts(work_dir),
-            },
-            {
-                "name": "ios_android",
-                "opts": self._build_ydl_opts(
-                    work_dir,
-                    extractor_args={"youtube": {"player_client": ["ios", "android"]}},
-                ),
-            },
+        # Datacenter IPs still frequently need Tor proxy or cookies + PO tokens.
+        proxy = self._effective_proxy()
+        specs: List[Dict[str, Any]] = []
+
+        client_variants: List[Tuple[str, Optional[Dict[str, Any]]]] = [
+            ("android_vr", {"youtube": {"player_client": ["android_vr"]}}),
+            ("tv_web_safari", {"youtube": {"player_client": ["tv", "web_safari"]}}),
+            ("web_embedded", {"youtube": {"player_client": ["web_embedded"]}}),
+            ("default_best_audio", None),
+            ("ios_android", {"youtube": {"player_client": ["ios", "android"]}}),
         ]
+
+        if proxy:
+            # Tor/residential proxy: default client is most reliable (android_vr often needs PO token).
+            proxy_order = ["default_best_audio", "tv_web_safari", "web_embedded"]
+            proxy_lookup = dict(client_variants)
+            for name in proxy_order:
+                extractor_args = proxy_lookup.get(name)
+                specs.append(
+                    {
+                        "name": f"proxy_{name}",
+                        "opts": self._build_ydl_opts(
+                            work_dir,
+                            proxy=proxy,
+                            extractor_args=extractor_args,
+                        ),
+                    }
+                )
+
+        for name, extractor_args in client_variants:
+            specs.append(
+                {
+                    "name": name,
+                    "opts": self._build_ydl_opts(work_dir, extractor_args=extractor_args),
+                }
+            )
 
         if pot_provider_installed():
             # Plugin auto-attaches PO tokens when HTTP provider is reachable (:4416).
@@ -342,6 +350,7 @@ class AudioPipelineService:
         extractor_args: Optional[Dict[str, Any]] = None,
         cookie_file: Optional[str] = None,
         cookies_from_browser: Optional[Tuple[str, ...]] = None,
+        proxy: Optional[str] = None,
     ) -> Dict[str, Any]:
         opts: Dict[str, Any] = {
             "format": "bestaudio[acodec!=none][vcodec=none]/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
@@ -364,6 +373,11 @@ class AudioPipelineService:
             opts["cookiefile"] = cookie_file
         if cookies_from_browser:
             opts["cookiesfrombrowser"] = cookies_from_browser
+        if proxy:
+            opts["proxy"] = proxy
+        js_runtime = self._node_js_runtime()
+        if js_runtime:
+            opts["js_runtimes"] = {"node": {"path": js_runtime}}
         if self.ffmpeg_path:
             opts["ffmpeg_location"] = self.ffmpeg_path
             opts["prefer_ffmpeg"] = True
@@ -477,6 +491,53 @@ class AudioPipelineService:
         }
         with metadata_path.open("w", encoding="utf-8") as fp:
             json.dump(payload, fp, ensure_ascii=False, indent=2)
+
+    @staticmethod
+    def _env_flag(name: str, default: bool = False) -> bool:
+        raw = os.getenv(name)
+        if raw is None or not str(raw).strip():
+            return default
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+    @staticmethod
+    def _tor_socks_url() -> str:
+        return os.getenv("YTDLP_TOR_SOCKS", "socks5h://127.0.0.1:9050").strip()
+
+    @classmethod
+    def _tor_socks_reachable(cls, proxy_url: Optional[str] = None) -> bool:
+        url = proxy_url or cls._tor_socks_url()
+        parsed = urlparse(url)
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or 9050
+        try:
+            with socket.create_connection((host, port), timeout=1.5):
+                return True
+        except OSError:
+            return False
+
+    @classmethod
+    def _effective_proxy(cls) -> Optional[str]:
+        explicit = os.getenv("YTDLP_PROXY", "").strip()
+        if explicit:
+            return explicit
+        if cls._env_flag("YTDLP_USE_TOR", default=False):
+            return cls._tor_socks_url()
+        if cls._env_flag("YTDLP_AUTO_TOR", default=True) and cls._tor_socks_reachable():
+            return cls._tor_socks_url()
+        return None
+
+    @staticmethod
+    def _node_js_runtime() -> Optional[str]:
+        configured = os.getenv("YTDLP_NODE_PATH", "").strip()
+        if configured and Path(configured).exists():
+            return configured
+        for candidate in (
+            "/exec-daemon/node",
+            shutil.which("node") or "",
+        ):
+            if candidate and Path(candidate).exists():
+                return candidate
+        return None
 
     @staticmethod
     def _cookie_file_path() -> Optional[str]:

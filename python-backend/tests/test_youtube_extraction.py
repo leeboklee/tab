@@ -60,11 +60,29 @@ def test_pot_provider_installed_returns_bool():
 def test_attempt_specs_include_community_clients(tmp_path, monkeypatch):
     monkeypatch.delenv("YTDLP_COOKIE_FILE", raising=False)
     monkeypatch.delenv("YTDLP_COOKIES_FROM_BROWSER", raising=False)
+    monkeypatch.delenv("YTDLP_PROXY", raising=False)
+    monkeypatch.delenv("YTDLP_USE_TOR", raising=False)
+    monkeypatch.setenv("YTDLP_AUTO_TOR", "false")
     pipeline = AudioPipelineService(storage_root=tmp_path)
     names = [spec["name"] for spec in pipeline._attempt_specs(tmp_path)]
     assert "android_vr" in names
     assert "tv_web_safari" in names
     assert "web_embedded" in names
+    assert not any(name.startswith("proxy_") for name in names)
+
+
+def test_attempt_specs_include_proxy_when_tor_enabled(tmp_path, monkeypatch):
+    monkeypatch.delenv("YTDLP_COOKIE_FILE", raising=False)
+    monkeypatch.delenv("YTDLP_COOKIES_FROM_BROWSER", raising=False)
+    monkeypatch.delenv("YTDLP_PROXY", raising=False)
+    monkeypatch.setenv("YTDLP_USE_TOR", "true")
+    monkeypatch.setenv("YTDLP_AUTO_TOR", "false")
+    pipeline = AudioPipelineService(storage_root=tmp_path)
+    names = [spec["name"] for spec in pipeline._attempt_specs(tmp_path)]
+    assert names[0] == "proxy_default_best_audio"
+    specs = {spec["name"]: spec for spec in pipeline._attempt_specs(tmp_path)}
+    assert specs["proxy_default_best_audio"]["opts"]["proxy"] == "socks5h://127.0.0.1:9050"
+    assert specs["proxy_default_best_audio"]["opts"]["js_runtimes"]["node"]["path"]
 
 
 def test_attempt_specs_cookie_excludes_web_creator(tmp_path, monkeypatch):
