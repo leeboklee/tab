@@ -16,6 +16,8 @@ interface AdvancedAudioPlayerProps {
   onPlay?: () => void
   onPause?: () => void
   onReset?: () => void
+  compact?: boolean
+  variant?: 'light' | 'dark'
 }
 
 export default function AdvancedAudioPlayer({
@@ -26,6 +28,8 @@ export default function AdvancedAudioPlayer({
   onPlay,
   onPause,
   onReset,
+  compact = false,
+  variant = 'dark',
 }: AdvancedAudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -36,6 +40,7 @@ export default function AdvancedAudioPlayer({
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const playing = externalPlaying ?? isPlaying
+  const isDark = variant === 'dark'
 
   useEffect(() => {
     const audio = audioRef.current
@@ -119,51 +124,68 @@ export default function AdvancedAudioPlayer({
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0
 
+  const shellClass = isDark
+    ? 'rounded-xl border border-white/8 bg-white/[0.03]'
+    : 'rounded-lg border border-gray-200 bg-white/90'
+  const titleClass = isDark ? 'text-sm font-medium text-white' : 'text-base font-semibold text-gray-900'
+  const mutedClass = isDark ? 'text-xs text-white/45' : 'text-xs text-gray-500'
+  const btnPrimary = isDark
+    ? 'rounded-full bg-[#ff8a3d] p-2.5 text-white hover:bg-[#ff9f5a]'
+    : 'rounded-full bg-blue-600 p-3 text-white hover:bg-blue-700'
+  const btnSecondary = isDark
+    ? 'rounded-full border border-white/10 bg-white/5 p-2.5 text-white/70 hover:bg-white/10'
+    : 'rounded-full bg-gray-200 p-3 text-gray-700 hover:bg-gray-300'
+  const rangeClass = isDark
+    ? 'h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-[#ff8a3d]'
+    : 'h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200'
+
   return (
-    <div className="rounded-lg border border-gray-200 bg-white/90 p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
-          <Volume2 className="h-4 w-4" />
-          {audioUrl ? '추출 음원 재생' : '오디오 플레이어'}
+    <div className={`${shellClass} ${compact ? 'p-3' : 'p-4'}`}>
+      <div className={`flex items-center justify-between ${compact ? 'mb-2' : 'mb-3'}`}>
+        <h3 className={`flex items-center gap-2 ${titleClass}`}>
+          <Volume2 className="h-4 w-4 opacity-70" />
+          음원 재생
         </h3>
-        <span className="text-xs text-gray-500">{tempo} BPM · {tabs.length}마디</span>
+        {!compact && (
+          <span className={mutedClass}>{tempo} BPM · {tabs.length}마디</span>
+        )}
       </div>
 
       {!audioUrl ? (
-        <p className="text-sm text-gray-500">분석된 음원이 없습니다. YouTube 추출 또는 업로드 후 재생됩니다.</p>
+        <p className={`text-sm ${isDark ? 'text-white/45' : 'text-gray-500'}`}>
+          분석된 음원이 없습니다. YouTube 추출 또는 업로드 후 재생됩니다.
+        </p>
       ) : (
         <>
-          {loadError && <p className="mb-2 text-sm text-red-600">{loadError}</p>}
+          {loadError && (
+            <p className={`mb-2 text-sm ${isDark ? 'text-red-400' : 'text-red-600'}`}>{loadError}</p>
+          )}
 
-          <div className="mb-3 flex items-center justify-center gap-3">
+          <div className={`flex items-center gap-2 ${compact ? '' : 'justify-center gap-3'}`}>
             <button
               onClick={() => void togglePlayPause()}
-              className="rounded-full bg-blue-600 p-3 text-white hover:bg-blue-700"
+              className={btnPrimary}
               title={playing ? '일시정지' : '재생'}
             >
-              {playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+              {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             </button>
-            <button
-              onClick={handleReset}
-              className="rounded-full bg-gray-200 p-3 text-gray-700 hover:bg-gray-300"
-              title="처음으로"
-            >
-              <RotateCcw className="h-5 w-5" />
+            <button onClick={handleReset} className={btnSecondary} title="처음으로">
+              <RotateCcw className="h-4 w-4" />
             </button>
             <button
               onClick={() => setIsMuted(!isMuted)}
-              className="rounded-full bg-gray-100 p-3 text-gray-600 hover:bg-gray-200"
+              className={btnSecondary}
               title={isMuted ? '음소거 해제' : '음소거'}
             >
-              {isMuted ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+              {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
             </button>
+            <div className={`ml-auto flex items-center gap-2 text-xs ${mutedClass}`}>
+              <span>{formatTime(currentTime)}</span>
+              <span>/</span>
+              <span>{formatTime(duration)}</span>
+            </div>
           </div>
 
-          <div className="mb-2 flex justify-between text-xs text-gray-500">
-            <span>{formatTime(currentTime)}</span>
-            <span>{Math.round(progress)}%</span>
-            <span>{formatTime(duration)}</span>
-          </div>
           <input
             type="range"
             min={0}
@@ -171,17 +193,19 @@ export default function AdvancedAudioPlayer({
             step={0.1}
             value={currentTime}
             onChange={(e) => handleSeek(Number(e.target.value))}
-            className="mb-3 h-2 w-full cursor-pointer appearance-none rounded-lg bg-gray-200"
+            className={`mt-2 ${rangeClass}`}
           />
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={isMuted ? 0 : volume}
-            onChange={(e) => setVolume(Number(e.target.value))}
-            className="h-1.5 w-full cursor-pointer appearance-none rounded-lg bg-gray-200"
-          />
+          {!compact && (
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={isMuted ? 0 : volume}
+              onChange={(e) => setVolume(Number(e.target.value))}
+              className={`mt-2 ${rangeClass}`}
+            />
+          )}
 
           <audio ref={audioRef} src={audioUrl} preload="metadata" className="hidden" />
         </>

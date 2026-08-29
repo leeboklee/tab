@@ -2,11 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Music, Guitar, FileText, ToggleLeft, ToggleRight, Play, Pause, RotateCcw, Download } from 'lucide-react'
+import { Music, Guitar, FileText, Play, Pause, RotateCcw, Download } from 'lucide-react'
 import toast from 'react-hot-toast'
-import Metronome from './Metronome'
-import ChordAnalyzer from './ChordAnalyzer'
-import AchievementCelebration from './AchievementCelebration'
 import AdvancedAudioPlayer from './AdvancedAudioPlayer'
 import MIDIPlayer from './MIDIPlayer'
 import { RealAudioAPI } from '@/app/lib/real-audio-api'
@@ -38,6 +35,10 @@ interface TabData {
     video_id: string
     thumbnail?: string
     audio_id?: string
+    result_mode?: string
+    status_summary?: string
+    tab_source?: string
+    pipeline_diagnostics?: Record<string, unknown>
   }
 }
 
@@ -53,6 +54,7 @@ export default function NotationViewer({ data }: NotationViewerProps) {
   const [currentBeat, setCurrentBeat] = useState(0)
   const [playbackSpeed, setPlaybackSpeed] = useState(1)
   const [showTabNotation, setShowTabNotation] = useState(true)
+  const [showTechDetails, setShowTechDetails] = useState(false)
   const [tempo, setTempo] = useState(data.tempo)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -402,157 +404,96 @@ export default function NotationViewer({ data }: NotationViewerProps) {
 
   const lyrics = getLyrics()
   const audioStreamUrl = data.metadata.audio_id ? RealAudioAPI.audioStreamUrl(data.metadata.audio_id) : undefined
+  const durationLabel = `${Math.floor(data.duration / 60)}:${(data.duration % 60).toString().padStart(2, '0')}`
+  const audioDiag = data.metadata.pipeline_diagnostics?.audio_analysis as Record<string, unknown> | undefined
 
   return (
-    <div className="space-y-6">
-      {/* Achievement Celebration */}
-      <AchievementCelebration
-        isPlaying={isPlaying}
-        currentBeat={currentBeat}
-        totalBeats={data.tabs?.length || 0}
-        difficulty={data.difficulty === '초급' ? 1 : data.difficulty === '중급' ? 2 : 3}
-      />
-
-      {/* Song Info */}
-      <div className="bg-gray-50 rounded-lg p-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <div>
-            <span className="text-gray-600">템포:</span>
-            <span className="ml-2 font-semibold">{tempo} BPM</span>
-          </div>
-          <div>
-            <span className="text-gray-600">키:</span>
-            <span className="ml-2 font-semibold">{data.key}</span>
-          </div>
-          <div>
-            <span className="text-gray-600">길이:</span>
-            <span className="ml-2 font-semibold">{Math.floor(data.duration / 60)}:{(data.duration % 60).toString().padStart(2, '0')}</span>
-          </div>
-          <div>
-            <span className="text-gray-600">마디:</span>
-            <span className="ml-2 font-semibold">{data.tabs ? data.tabs.length : 0}</span>
+    <div className="space-y-4 text-white">
+      {/* 재생 */}
+      <div className="rounded-xl border border-white/10 bg-[#141820] p-4">
+        <AdvancedAudioPlayer
+          audioUrl={audioStreamUrl}
+          tabs={data.tabs || []}
+          tempo={tempo}
+          isPlaying={isPlaying}
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+          onReset={handleReset}
+          compact
+        />
+        <div className="mt-3 flex items-center justify-between border-t border-white/8 pt-3">
+          <MIDIPlayer tabs={data.tabs || []} tempo={tempo} compact />
+          <div className="flex gap-3 text-xs text-white/45">
+            <span>{data.key}</span>
+            <span>{tempo} BPM</span>
+            <span>{durationLabel}</span>
+            <span>{data.tabs?.length ?? 0}마디</span>
           </div>
         </div>
       </div>
 
-      {/* Advanced Audio Player */}
-      <AdvancedAudioPlayer
-        audioUrl={audioStreamUrl}
-        tabs={data.tabs || []}
-        tempo={tempo}
-        isPlaying={isPlaying}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        onReset={handleReset}
-      />
+      {/* 악보 타입 */}
+      <div className="flex flex-wrap gap-1.5">
+        {notationTypes.map((type) => (
+          <button
+            key={type.id}
+            onClick={() => setActiveNotation(type.id)}
+            className={`rounded-lg px-3 py-1.5 text-xs transition ${
+              activeNotation === type.id
+                ? 'bg-[#ff8a3d] text-white'
+                : 'bg-white/5 text-white/60 hover:bg-white/10'
+            }`}
+          >
+            {type.label}
+          </button>
+        ))}
+        <div className="ml-auto flex items-center gap-2">
+          <select
+            value={playbackSpeed}
+            onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
+            className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/70"
+          >
+            <option value={0.5}>0.5x</option>
+            <option value={0.75}>0.75x</option>
+            <option value={1}>1x</option>
+            <option value={1.25}>1.25x</option>
+            <option value={1.5}>1.5x</option>
+          </select>
+          <button
+            onClick={() => setShowTabNotation(!showTabNotation)}
+            className="text-xs text-white/45 hover:text-white/70"
+          >
+            {showTabNotation ? '악보 숨기기' : '악보 보기'}
+          </button>
+        </div>
+      </div>
 
-      {/* MIDI Player */}
-      <MIDIPlayer
-        tabs={data.tabs || []}
-        tempo={tempo}
-      />
-
-      {/* Metronome */}
-      <Metronome
-        tempo={tempo}
-        isPlaying={isPlaying}
-        onTempoChange={setTempo}
-      />
-
-      {/* Chord Analysis */}
-      {data.tabs && data.tabs.length > 0 && (
-        <ChordAnalyzer
-          tabs={data.tabs}
-          tempo={tempo}
-        />
+      {/* 기술 정보 (접기) */}
+      {(data.metadata.analysis_method || audioDiag) && (
+        <div className="rounded-xl border border-white/8 bg-white/[0.02]">
+          <button
+            onClick={() => setShowTechDetails(!showTechDetails)}
+            className="flex w-full items-center justify-between px-4 py-2.5 text-xs text-white/45 hover:text-white/65"
+          >
+            <span>기술 정보</span>
+            <span>{showTechDetails ? '▲' : '▼'}</span>
+          </button>
+          {showTechDetails && (
+            <div className="space-y-1 border-t border-white/8 px-4 py-3 text-xs text-white/40">
+              {data.metadata.status_summary && <p>{data.metadata.status_summary}</p>}
+              {data.metadata.analysis_method && <p>분석: {data.metadata.analysis_method}</p>}
+              {data.metadata.tab_source && <p>탭: {data.metadata.tab_source}</p>}
+              {typeof audioDiag?.pitch_tab_confidence === 'number' && (
+                <p>신뢰도: {Math.round((audioDiag.pitch_tab_confidence as number) * 100)}%</p>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
-      {/* Controls */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={handlePlay}
-            className="bg-primary-600 hover:bg-primary-700 text-white rounded-full p-3 transition-colors duration-200"
-            title={isPlaying ? "정지" : "재생"}
-          >
-            {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-          </button>
-          
-          <button
-            onClick={handleReset}
-            className="bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-full p-3 transition-colors duration-200"
-            title="처음으로"
-          >
-            <RotateCcw className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="flex items-center space-x-4">
-          {/* 기타 악보 보기 토글 */}
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-600">기타 악보:</span>
-            <button
-              onClick={() => setShowTabNotation(!showTabNotation)}
-              className="flex items-center space-x-2 text-sm"
-            >
-              {showTabNotation ? (
-                <ToggleRight className="h-5 w-5 text-primary-600" />
-              ) : (
-                <ToggleLeft className="h-5 w-5 text-gray-400" />
-              )}
-              <span className={showTabNotation ? "text-primary-600" : "text-gray-500"}>
-                {showTabNotation ? "켜짐" : "꺼짐"}
-              </span>
-            </button>
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-600">속도:</span>
-            <select
-              value={playbackSpeed}
-              onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
-              className="text-sm border border-gray-300 rounded px-2 py-1"
-            >
-              <option value={0.5}>0.5x</option>
-              <option value={0.75}>0.75x</option>
-              <option value={1}>1x</option>
-              <option value={1.25}>1.25x</option>
-              <option value={1.5}>1.5x</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* 악보 타입 선택 */}
-      <div className="bg-white/80 backdrop-blur-sm rounded-lg p-4 border border-gray-200">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">악보 타입 선택</h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          {notationTypes.map((type) => (
-            <motion.button
-              key={type.id}
-              onClick={() => setActiveNotation(type.id)}
-              className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                activeNotation === type.id
-                  ? 'border-primary-500 bg-primary-50 text-primary-700'
-                  : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
-              }`}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <div className="flex items-center space-x-3">
-                {type.icon}
-                <div className="text-left">
-                  <div className="font-medium">{type.label}</div>
-                  <div className="text-sm text-gray-500">{type.description}</div>
-                </div>
-              </div>
-            </motion.button>
-          ))}
-        </div>
-      </div>
-
-      {/* 악보 표시 영역 */}
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+      {/* 악보 */}
+      {showTabNotation && (
+      <div className="overflow-hidden rounded-xl border border-white/10 bg-[#f7f4ec] text-gray-900">
         <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <h4 className="font-semibold text-gray-900">
@@ -906,20 +847,8 @@ export default function NotationViewer({ data }: NotationViewerProps) {
           )}
         </div>
       </div>
+      )}
 
-      {/* Progress Bar */}
-      <div className="space-y-2">
-        <div className="flex justify-between text-sm text-gray-600">
-          <span>진행률</span>
-          <span>{data.tabs && data.tabs.length > 0 ? Math.round((currentBeat / data.tabs.length) * 100) : 0}%</span>
-        </div>
-        <div className="w-full bg-gray-200 rounded-full h-2">
-          <div
-            className="bg-primary-600 h-2 rounded-full transition-all duration-300"
-            style={{ width: `${data.tabs && data.tabs.length > 0 ? (currentBeat / data.tabs.length) * 100 : 0}%` }}
-          />
-        </div>
-      </div>
     </div>
   )
 }

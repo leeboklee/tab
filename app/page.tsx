@@ -385,6 +385,9 @@ export default function Home() {
           thumbnail: tabData.metadata.thumbnail,
           tab_source: tabData.metadata.tab_source,
           audio_id: (tabData.metadata as { audio_id?: string }).audio_id ?? '',
+          status_summary: tabData.metadata.status_summary ?? '',
+          tab_source: tabData.metadata.tab_source,
+          pipeline_diagnostics: (tabData.metadata as { pipeline_diagnostics?: Record<string, unknown> }).pipeline_diagnostics,
         },
       }
     : null
@@ -535,10 +538,10 @@ export default function Home() {
           )}
 
           {activeSection === 'workspace' && (
-            <div className="rounded-2xl border border-white/8 bg-[#0f131c] p-5">
+            <div className="space-y-4">
               {tabData ? (
                 <>
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-end justify-between gap-3">
                     <div>
                       <h3 className="text-lg font-semibold text-white">{tabData.title}</h3>
                       <p className="text-sm text-white/50">{tabData.artist}</p>
@@ -549,15 +552,14 @@ export default function Home() {
                       </span>
                       <span className="rounded-md border border-white/10 px-2 py-0.5 text-white/60">{tabData.key}</span>
                       <span className="rounded-md border border-white/10 px-2 py-0.5 text-white/60">{tabData.tempo} BPM</span>
+                      <span className="rounded-md border border-white/10 px-2 py-0.5 text-white/60">{tabData.difficulty}</span>
                     </div>
                   </div>
-                  <div className="grid gap-4 lg:grid-cols-[1fr,1.2fr]">
-                    <div className="rounded-xl border border-white/8 bg-black/30 p-2">
-                      <YouTubePlayer url={youtubeUrl} />
-                    </div>
-                    <div className="overflow-hidden rounded-xl border border-white/8 bg-[#f7f4ec] p-1 text-black">
-                      {notationData ? <NotationViewer data={notationData} /> : null}
-                    </div>
+                  <div className="overflow-hidden rounded-xl border border-white/8 bg-black/40">
+                    <YouTubePlayer url={youtubeUrl} />
+                  </div>
+                  <div className="rounded-xl border border-white/8 bg-[#0f131c] p-4">
+                    {notationData ? <NotationViewer data={notationData} /> : null}
                   </div>
                 </>
               ) : (

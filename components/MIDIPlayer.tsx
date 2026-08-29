@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { Download, Music, Pause, Play } from 'lucide-react'
+import { Download, Guitar, Pause, Play } from 'lucide-react'
 
 interface MIDIPlayerProps {
   tabs: {
@@ -11,6 +11,8 @@ interface MIDIPlayerProps {
     technique: string
   }[]
   tempo: number
+  compact?: boolean
+  variant?: 'light' | 'dark'
 }
 
 const BASE_MIDI = [40, 45, 50, 55, 59, 64]
@@ -19,10 +21,12 @@ function midiNote(stringIndex: number, fret: number): number {
   return BASE_MIDI[stringIndex] + fret
 }
 
-export default function MIDIPlayer({ tabs, tempo }: MIDIPlayerProps) {
+export default function MIDIPlayer({ tabs, tempo, compact = false, variant = 'dark' }: MIDIPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const stopRef = useRef<(() => void) | null>(null)
+
+  const isDark = variant === 'dark'
 
   const stopPlayback = () => {
     stopRef.current?.()
@@ -114,44 +118,54 @@ export default function MIDIPlayer({ tabs, tempo }: MIDIPlayerProps) {
     }
   }
 
+  const shellClass = isDark
+    ? 'rounded-xl border border-white/8 bg-white/[0.03]'
+    : 'rounded-lg border border-gray-200 bg-white/90'
+  const titleClass = isDark ? 'text-sm font-medium text-white' : 'text-base font-semibold text-gray-900'
+  const btnPrimary = isDark
+    ? 'rounded-full bg-white/10 p-2.5 text-white hover:bg-white/15 disabled:opacity-40'
+    : 'rounded-full bg-indigo-600 p-3 text-white hover:bg-indigo-700 disabled:opacity-40'
+  const btnSecondary = isDark
+    ? 'rounded-full border border-white/10 bg-white/5 p-2.5 text-white/70 hover:bg-white/10 disabled:opacity-40'
+    : 'rounded-full bg-gray-200 p-3 text-gray-700 hover:bg-gray-300 disabled:opacity-40'
+
   return (
-    <div className="rounded-lg border border-gray-200 bg-white/90 p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
-          <Music className="h-4 w-4" />
+    <div className={`${shellClass} ${compact ? 'p-3' : 'p-4'}`}>
+      <div className={`flex items-center justify-between ${compact ? 'mb-2' : 'mb-3'}`}>
+        <h3 className={`flex items-center gap-2 ${titleClass}`}>
+          <Guitar className="h-4 w-4 opacity-70" />
           탭 미리듣기
         </h3>
-        <span className="text-xs text-gray-500">{tempo} BPM</span>
+        {!compact && <span className={`text-xs ${isDark ? 'text-white/45' : 'text-gray-500'}`}>{tempo} BPM</span>}
       </div>
 
-      <div className="flex items-center justify-center gap-3">
+      <div className="flex items-center gap-2">
         <button
           onClick={() => void playTabPreview()}
           disabled={isLoading || tabs.length === 0}
-          className="rounded-full bg-indigo-600 p-3 text-white hover:bg-indigo-700 disabled:opacity-40"
+          className={btnPrimary}
           title={isPlaying ? '정지' : '탭 소리 재생'}
         >
           {isLoading ? (
-            <span className="block h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            <span className="block h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
           ) : isPlaying ? (
-            <Pause className="h-5 w-5" />
+            <Pause className="h-4 w-4" />
           ) : (
-            <Play className="h-5 w-5" />
+            <Play className="h-4 w-4" />
           )}
         </button>
         <button
           onClick={() => void downloadMidi()}
           disabled={isLoading || tabs.length === 0}
-          className="rounded-full bg-gray-200 p-3 text-gray-700 hover:bg-gray-300 disabled:opacity-40"
+          className={btnSecondary}
           title="MIDI 다운로드"
         >
-          <Download className="h-5 w-5" />
+          <Download className="h-4 w-4" />
         </button>
+        <p className={`ml-1 text-xs ${isDark ? 'text-white/40' : 'text-gray-500'}`}>
+          탭 음정만 간단히 들어보기
+        </p>
       </div>
-
-      <p className="mt-3 text-center text-xs text-gray-500">
-        실제 곡은 위 추출 음원 재생을 사용하세요. 여기는 탭 음정 미리듣기입니다.
-      </p>
     </div>
   )
 }
