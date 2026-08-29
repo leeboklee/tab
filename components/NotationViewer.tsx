@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Music, Guitar, FileText, Play, Pause, RotateCcw, Download } from 'lucide-react'
+import { Music, Guitar, FileText, Play, Pause, RotateCcw, Download, ChevronDown, ChevronUp } from 'lucide-react'
 import toast from 'react-hot-toast'
 import AdvancedAudioPlayer from './AdvancedAudioPlayer'
 import MIDIPlayer from './MIDIPlayer'
@@ -38,6 +38,7 @@ interface TabData {
     result_mode?: string
     status_summary?: string
     tab_source?: string
+    pipeline_status?: Record<string, string>
     pipeline_diagnostics?: Record<string, unknown>
   }
 }
@@ -378,6 +379,45 @@ export default function NotationViewer({ data }: NotationViewerProps) {
   // 가사 더보기 상태
   const [showAllLyrics, setShowAllLyrics] = useState(false)
 
+  const resultMode = data.metadata.result_mode || 'preview_only'
+  const statusBadge =
+    resultMode === 'audio_verified'
+      ? { label: '분석 완료', tone: 'text-[#8ef5b5] border-[#8ef5b5]/30 bg-[#8ef5b5]/10' }
+      : resultMode === 'metadata_fallback'
+        ? { label: '기본 분석', tone: 'text-[#ffd76a] border-[#ffd76a]/30 bg-[#ffd76a]/10' }
+        : { label: '미리보기', tone: 'text-[#8cc8ff] border-[#8cc8ff]/30 bg-[#8cc8ff]/10' }
+
+  const difficultyTone =
+    data.difficulty === '초급'
+      ? 'text-emerald-300 border-emerald-400/30 bg-emerald-400/10'
+      : data.difficulty === '중급'
+        ? 'text-amber-300 border-amber-400/30 bg-amber-400/10'
+        : 'text-rose-300 border-rose-400/30 bg-rose-400/10'
+
+  const formatDuration = (seconds: number) => {
+    const m = Math.floor(seconds / 60)
+    const s = Math.floor(seconds % 60)
+    return `${m}:${s.toString().padStart(2, '0')}`
+  }
+
+  const analysisMethodLabel = (method: string) => {
+    if (method === 'audio_waveform') return '음원 파형 분석'
+    if (method === 'metadata_fallback') return '메타데이터 기반'
+    if (method === 'metadata_preview') return '미리보기 생성'
+    return method
+  }
+
+  const tabSourceLabel = (source?: string) => {
+    if (source === 'audio_pitch') return '오디오 피치'
+    if (source === 'fallback_pattern') return '기본 패턴'
+    return source || '알 수 없음'
+  }
+
+  const extractAttempts =
+    (data.metadata.pipeline_diagnostics?.extract_attempts as { name?: string; status?: string; error?: string }[] | undefined) || []
+  const audioDiagnostics = data.metadata.pipeline_diagnostics?.audio_analysis as Record<string, unknown> | undefined
+  const pipelineStatus = data.metadata.pipeline_status || {}
+
   // 실제 가사 데이터 사용
   const getLyrics = () => {
     const safeData: any = data as any
@@ -404,13 +444,40 @@ export default function NotationViewer({ data }: NotationViewerProps) {
 
   const lyrics = getLyrics()
   const audioStreamUrl = data.metadata.audio_id ? RealAudioAPI.audioStreamUrl(data.metadata.audio_id) : undefined
-  const durationLabel = `${Math.floor(data.duration / 60)}:${(data.duration % 60).toString().padStart(2, '0')}`
-  const audioDiag = data.metadata.pipeline_diagnostics?.audio_analysis as Record<string, unknown> | undefined
 
   return (
     <div className="space-y-4 text-white">
-      {/* 재생 */}
-      <div className="rounded-xl border border-white/10 bg-[#141820] p-4">
+      {/* Result header */}
+      <div className="space-y-3">
+        <div>
+          <h2 className="text-xl font-semibold text-white">{data.title}</h2>
+          <p className="text-sm text-white/50">{data.artist}</p>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <span className={`rounded-md border px-2 py-0.5 text-xs ${statusBadge.tone}`}>{statusBadge.label}</span>
+          <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/70">{data.key}</span>
+          <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/70">{tempo} BPM</span>
+          <span className={`rounded-md border px-2 py-0.5 text-xs ${difficultyTone}`}>{data.difficulty}</span>
+        </div>
+      </div>
+
+      {/* Metadata grid */}
+      <div className="grid grid-cols-4 gap-2 rounded-xl border border-white/8 bg-white/[0.03] p-3">
+        {[
+          { label: '템포', value: `${tempo} BPM` },
+          { label: '키', value: data.key },
+          { label: '길이', value: formatDuration(data.duration) },
+          { label: '마디', value: `${data.tabs?.length || 0}` },
+        ].map((item) => (
+          <div key={item.label} className="text-center">
+            <p className="text-[10px] uppercase tracking-wide text-white/40">{item.label}</p>
+            <p className="mt-0.5 text-sm font-semibold text-white">{item.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Unified players */}
+      <div className="grid gap-2 sm:grid-cols-2">
         <AdvancedAudioPlayer
           audioUrl={audioStreamUrl}
           tabs={data.tabs || []}
@@ -420,16 +487,43 @@ export default function NotationViewer({ data }: NotationViewerProps) {
           onPause={() => setIsPlaying(false)}
           onReset={handleReset}
           compact
+          variant="dark"
         />
-        <div className="mt-3 flex items-center justify-between border-t border-white/8 pt-3">
-          <MIDIPlayer tabs={data.tabs || []} tempo={tempo} compact />
-          <div className="flex gap-3 text-xs text-white/45">
-            <span>{data.key}</span>
-            <span>{tempo} BPM</span>
-            <span>{durationLabel}</span>
-            <span>{data.tabs?.length ?? 0}마디</span>
-          </div>
+        <MIDIPlayer tabs={data.tabs || []} tempo={tempo} compact variant="dark" />
+      </div>
+
+      {/* Tab playback controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handlePlay}
+            className="rounded-full bg-[#ff8a3d] p-2 text-white hover:bg-[#ff9f5a]"
+            title={isPlaying ? '정지' : '탭 따라 연주'}
+          >
+            {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+          </button>
+          <button
+            onClick={handleReset}
+            className="rounded-full border border-white/10 bg-white/5 p-2 text-white/70 hover:bg-white/10"
+            title="처음으로"
+          >
+            <RotateCcw className="h-4 w-4" />
+          </button>
+          <span className="text-xs text-white/45">
+            진행 {data.tabs?.length ? Math.round((currentBeat / data.tabs.length) * 100) : 0}%
+          </span>
         </div>
+        <select
+          value={playbackSpeed}
+          onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
+          className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/70"
+        >
+          <option value={0.5}>0.5x</option>
+          <option value={0.75}>0.75x</option>
+          <option value={1}>1x</option>
+          <option value={1.25}>1.25x</option>
+          <option value={1.5}>1.5x</option>
+        </select>
       </div>
 
       {/* 악보 타입 */}
@@ -469,81 +563,92 @@ export default function NotationViewer({ data }: NotationViewerProps) {
       </div>
 
       {/* 기술 정보 (접기) */}
-      {(data.metadata.analysis_method || audioDiag) && (
-        <div className="rounded-xl border border-white/8 bg-white/[0.02]">
-          <button
-            onClick={() => setShowTechDetails(!showTechDetails)}
-            className="flex w-full items-center justify-between px-4 py-2.5 text-xs text-white/45 hover:text-white/65"
-          >
-            <span>기술 정보</span>
-            <span>{showTechDetails ? '▲' : '▼'}</span>
-          </button>
-          {showTechDetails && (
-            <div className="space-y-1 border-t border-white/8 px-4 py-3 text-xs text-white/40">
-              {data.metadata.status_summary && <p>{data.metadata.status_summary}</p>}
-              {data.metadata.analysis_method && <p>분석: {data.metadata.analysis_method}</p>}
-              {data.metadata.tab_source && <p>탭: {data.metadata.tab_source}</p>}
-              {typeof audioDiag?.pitch_tab_confidence === 'number' && (
-                <p>신뢰도: {Math.round((audioDiag.pitch_tab_confidence as number) * 100)}%</p>
-              )}
+      <div className="rounded-xl border border-white/8 bg-white/[0.02]">
+        <button
+          type="button"
+          onClick={() => setShowTechDetails(!showTechDetails)}
+          className="flex w-full items-center justify-between px-3 py-2.5 text-left text-sm text-white/60 hover:text-white/80"
+        >
+          <span>기술 정보</span>
+          {showTechDetails ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </button>
+        {showTechDetails && (
+          <div className="space-y-3 border-t border-white/8 px-3 py-3 text-xs text-white/55">
+            <div>
+              <p className="text-white/35">분석 방식</p>
+              <p className="mt-0.5 text-white/75">{analysisMethodLabel(data.metadata.analysis_method)}</p>
             </div>
-          )}
-        </div>
-      )}
+            <div>
+              <p className="text-white/35">탭 생성</p>
+              <p className="mt-0.5 text-white/75">{tabSourceLabel(data.metadata.tab_source)}</p>
+            </div>
+            {Object.keys(pipelineStatus).length > 0 && (
+              <div>
+                <p className="text-white/35">파이프라인</p>
+                <div className="mt-1 space-y-0.5">
+                  {Object.entries(pipelineStatus).map(([key, value]) => (
+                    <p key={key} className="text-white/65">
+                      {key}: {value}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+            {extractAttempts.length > 0 && (
+              <div>
+                <p className="text-white/35">추출 시도</p>
+                <div className="mt-1 space-y-0.5">
+                  {extractAttempts.slice(0, 6).map((attempt, index) => (
+                    <p key={`${attempt.name || 'attempt'}-${index}`} className="text-white/65">
+                      {attempt.name}: {attempt.status}
+                      {attempt.error ? ` — ${attempt.error}` : ''}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+            {audioDiagnostics && (
+              <div>
+                <p className="text-white/35">피치 분석</p>
+                <div className="mt-1 space-y-0.5">
+                  {Object.entries(audioDiagnostics).map(([key, value]) => (
+                    <p key={key} className="break-all text-white/65">
+                      {key}: {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+            {data.metadata.status_summary && (
+              <p className="text-white/45">{data.metadata.status_summary}</p>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* 악보 */}
       {showTabNotation && (
       <div className="overflow-hidden rounded-xl border border-white/10 bg-[#f7f4ec] text-gray-900">
-        <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <h4 className="font-semibold text-gray-900">
+        <div className="flex items-center justify-between border-b border-gray-200 bg-[#ebe6dc] px-4 py-2">
+          <h4 className="font-semibold text-gray-900">
               {notationTypes.find(t => t.id === activeNotation)?.label}
             </h4>
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-600">난이도:</span>
-                <span className={`px-2 py-1 rounded text-xs font-medium ${
-                  data.difficulty === '초급' ? 'bg-green-100 text-green-700' :
-                  data.difficulty === '중급' ? 'bg-yellow-100 text-yellow-700' :
-                  'bg-red-100 text-red-700'
-                }`}>
-                  {data.difficulty}
-                </span>
-              </div>
-              
-              {/* 다운로드 버튼들 */}
-              <div className="flex space-x-2">
-                <button
-                  onClick={() => handleDownload('jpg')}
-                  className="text-xs bg-red-100 text-red-700 px-3 py-1 rounded hover:bg-red-200 transition-colors duration-200"
-                  title="JPG 이미지로 다운로드"
-                >
-                  JPG
-                </button>
-                <button
-                  onClick={() => handleDownload('pdf')}
-                  className="text-xs bg-primary-100 text-primary-700 px-3 py-1 rounded hover:bg-primary-200 transition-colors duration-200"
-                  title="PDF 문서로 다운로드"
-                >
-                  PDF
-                </button>
-                <button
-                  onClick={() => handleDownload('gpx')}
-                  className="text-xs bg-guitar-100 text-guitar-700 px-3 py-1 rounded hover:bg-guitar-200 transition-colors duration-200"
-                  title="GPX 파일로 다운로드"
-                >
-                  GPX
-                </button>
-                <button
-                  onClick={() => handleDownload('musicxml')}
-                  className="text-xs bg-green-100 text-green-700 px-3 py-1 rounded hover:bg-green-200 transition-colors duration-200"
-                  title="MusicXML 파일로 다운로드"
-                >
-                  MusicXML
-                </button>
-              </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleDownload('jpg')}
+                className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-black/5"
+                title="JPG 이미지로 다운로드"
+              >
+                JPG
+              </button>
+              <button
+                onClick={() => handleDownload('pdf')}
+                className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-black/5"
+                title="PDF 문서로 다운로드"
+              >
+                PDF
+              </button>
             </div>
-          </div>
         </div>
 
         <div className="p-6">

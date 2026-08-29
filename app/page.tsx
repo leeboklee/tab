@@ -370,7 +370,7 @@ export default function Home() {
     }
   }
 
-  const resultMode = analysisNotice?.mode || (tabData?.metadata?.result_mode as AnalysisNotice['mode'] | undefined) || 'preview_only'
+
   const notationData = tabData
     ? {
         ...tabData,
@@ -384,17 +384,12 @@ export default function Home() {
           video_id: tabData.metadata.video_id ?? '',
           thumbnail: tabData.metadata.thumbnail,
           tab_source: tabData.metadata.tab_source,
+          pipeline_status: tabData.metadata.pipeline_status,
+          pipeline_diagnostics: tabData.metadata.pipeline_diagnostics,
           audio_id: (tabData.metadata as { audio_id?: string }).audio_id ?? '',
-          status_summary: tabData.metadata.status_summary ?? '',
-          tab_source: tabData.metadata.tab_source,
-          pipeline_diagnostics: (tabData.metadata as { pipeline_diagnostics?: Record<string, unknown> }).pipeline_diagnostics,
         },
       }
     : null
-  const resultTone =
-    resultMode === 'audio_verified' ? 'text-[#8ef5b5] border-[#8ef5b5]/30 bg-[#8ef5b5]/10' : resultMode === 'metadata_fallback'
-      ? 'text-[#ffd76a] border-[#ffd76a]/30 bg-[#ffd76a]/10'
-      : 'text-[#8cc8ff] border-[#8cc8ff]/30 bg-[#8cc8ff]/10'
 
   const summaryCards = [
     {
@@ -538,30 +533,16 @@ export default function Home() {
           )}
 
           {activeSection === 'workspace' && (
-            <div className="space-y-4">
+            <div className="rounded-2xl border border-white/8 bg-[#0f131c] p-5">
               {tabData ? (
-                <>
-                  <div className="flex flex-wrap items-end justify-between gap-3">
-                    <div>
-                      <h3 className="text-lg font-semibold text-white">{tabData.title}</h3>
-                      <p className="text-sm text-white/50">{tabData.artist}</p>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 text-xs">
-                      <span className={`rounded-md border px-2 py-0.5 ${resultTone}`}>
-                        {analysisNotice?.title || '분석 완료'}
-                      </span>
-                      <span className="rounded-md border border-white/10 px-2 py-0.5 text-white/60">{tabData.key}</span>
-                      <span className="rounded-md border border-white/10 px-2 py-0.5 text-white/60">{tabData.tempo} BPM</span>
-                      <span className="rounded-md border border-white/10 px-2 py-0.5 text-white/60">{tabData.difficulty}</span>
-                    </div>
-                  </div>
-                  <div className="overflow-hidden rounded-xl border border-white/8 bg-black/40">
+                <div className="grid gap-4 lg:grid-cols-[1fr,1.2fr]">
+                  <div className="rounded-xl border border-white/8 bg-black/30 p-2">
                     <YouTubePlayer url={youtubeUrl} />
                   </div>
-                  <div className="rounded-xl border border-white/8 bg-[#0f131c] p-4">
+                  <div className="min-w-0">
                     {notationData ? <NotationViewer data={notationData} /> : null}
                   </div>
-                </>
+                </div>
               ) : (
                 <p className="py-8 text-center text-sm text-white/45">URL 분석 후 결과가 여기 표시됩니다.</p>
               )}
