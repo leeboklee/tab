@@ -206,6 +206,7 @@ export default function Home() {
   const [analysisNotice, setAnalysisNotice] = useState<AnalysisNotice | null>(null)
   const [health, setHealth] = useState<AudioHealthResponse | null>(null)
   const [healthError, setHealthError] = useState<string | null>(null)
+  const [healthLoading, setHealthLoading] = useState(true)
 
   useEffect(() => {
     let mounted = true
@@ -217,6 +218,7 @@ export default function Home() {
         return
       }
 
+      setHealthLoading(false)
       if (nextHealth) {
         setHealth(nextHealth)
         setHealthError(null)
@@ -259,7 +261,7 @@ export default function Home() {
   }, [])
 
   const pipelineReady = Boolean(health?.status === 'healthy')
-  const pipelineLabel = pipelineReady ? '실제 분석 연결됨' : '미리보기 모드'
+  const pipelineLabel = healthLoading ? '연결 확인 중…' : pipelineReady ? '실제 분석 연결됨' : '미리보기 모드'
   const ffmpegReady = Boolean(health?.services?.audio_pipeline?.ffmpeg_available)
   const librosaReady = Boolean(health?.services?.audio_analysis_deps?.librosa)
 
@@ -427,8 +429,12 @@ export default function Home() {
   const summaryCards = [
     {
       label: '추출 엔진',
-      value: ffmpegReady ? `FFmpeg 연결 (${health?.services?.audio_pipeline?.ffmpeg_source || 'system'})` : 'FFmpeg 미연결',
-      tone: ffmpegReady ? 'ok' : 'warn',
+      value: healthLoading
+        ? '백엔드 연결 확인 중…'
+        : ffmpegReady
+          ? `FFmpeg 연결 (${health?.services?.audio_pipeline?.ffmpeg_source || 'system'})`
+          : 'FFmpeg 미연결',
+      tone: healthLoading ? 'idle' : ffmpegReady ? 'ok' : 'warn',
       icon: AudioLines,
     },
     {

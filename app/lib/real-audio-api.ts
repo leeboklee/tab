@@ -1,5 +1,23 @@
-const REAL_AUDIO_API_BASE =
-  process.env.NEXT_PUBLIC_REAL_AUDIO_API_BASE?.trim() || 'http://localhost:8002'
+const LOCAL_BACKEND = 'http://localhost:8002'
+const SAME_ORIGIN_BACKEND = '/api/python'
+
+function isLocalBackendUrl(url: string): boolean {
+  return /localhost:8002|127\.0\.0\.1:8002/.test(url)
+}
+
+/** Browser uses same-origin proxy so port-forwarding needs only :3019. */
+function resolveAudioApiBase(): string {
+  const configured = process.env.NEXT_PUBLIC_REAL_AUDIO_API_BASE?.trim()
+
+  if (typeof window !== 'undefined') {
+    if (!configured || isLocalBackendUrl(configured)) {
+      return SAME_ORIGIN_BACKEND
+    }
+    return configured
+  }
+
+  return configured || LOCAL_BACKEND
+}
 
 export interface AudioAnalysisResponse {
   success: boolean
@@ -47,7 +65,11 @@ export interface AudioHealthResponse {
 
 export class RealAudioAPI {
   private static readonly REQUEST_TIMEOUT_MS = 180000
-  private static readonly HEALTH_TIMEOUT_MS = 5000
+  private static readonly HEALTH_TIMEOUT_MS = 2500
+
+  private static apiBase(): string {
+    return resolveAudioApiBase()
+  }
 
   static async analyzeAudio(url: string, quality: 'balanced' | 'cloud' = 'balanced'): Promise<AudioAnalysisResponse> {
     return this.request('/analyze', { method: 'POST', body: JSON.stringify({ url, quality }) })
@@ -90,7 +112,7 @@ export class RealAudioAPI {
     const timeout = window.setTimeout(() => controller.abort(), this.HEALTH_TIMEOUT_MS)
 
     try {
-      const response = await fetch(`${REAL_AUDIO_API_BASE}/health`, { signal: controller.signal, cache: 'no-store' })
+      const response = await fetch(`${this.apiBase()}/health`, { signal: controller.signal, cache: 'no-store' })
       if (!response.ok) {
         return null
       }
@@ -114,7 +136,7 @@ export class RealAudioAPI {
     const timeout = window.setTimeout(() => controller.abort(), this.REQUEST_TIMEOUT_MS)
 
     try {
-      const response = await fetch(`${REAL_AUDIO_API_BASE}${path}`, {
+      const response = await fetch(`${this.apiBase()}${path}`, {
         method: 'POST',
         body: form,
         signal: controller.signal,
@@ -153,7 +175,7 @@ export class RealAudioAPI {
     const timeout = window.setTimeout(() => controller.abort(), this.REQUEST_TIMEOUT_MS)
 
     try {
-      const response = await fetch(`${REAL_AUDIO_API_BASE}${path}`, {
+      const response = await fetch(`${this.apiBase()}${path}`, {
         headers: {
           'Content-Type': 'application/json',
         },
