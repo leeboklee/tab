@@ -429,17 +429,8 @@ export default function NotationViewer({ data }: NotationViewerProps) {
       }))
     }
     
-    // 기본 가사 (폴백)
-    return [
-      { text: "사랑이 남긴 상처들도 감싸줄게", chords: [], line_type: 'verse' },
-      { text: "어쩌면 우린 벌써 알고 있어", chords: [], line_type: 'verse' },
-      { text: "그토록 찾아 헤맨 사랑의 꿈", chords: [], line_type: 'verse' },
-      { text: "외롭게만 하는 걸", chords: [], line_type: 'verse' },
-      { text: "시간이 흘러도 변하지 않을", chords: [], line_type: 'chorus' },
-      { text: "우리의 마음은 영원할 거야", chords: [], line_type: 'chorus' },
-      { text: "함께 걸어가는 이 길에서", chords: [], line_type: 'chorus' },
-      { text: "서로를 지켜주며 살아가자", chords: [], line_type: 'chorus' }
-    ]
+    // 가사 없음
+    return []
   }
 
   const lyrics = getLyrics()
@@ -458,22 +449,9 @@ export default function NotationViewer({ data }: NotationViewerProps) {
           <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/70">{data.key}</span>
           <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/70">{tempo} BPM</span>
           <span className={`rounded-md border px-2 py-0.5 text-xs ${difficultyTone}`}>{data.difficulty}</span>
+          <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/70">{formatDuration(data.duration)}</span>
+          <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/70">{data.tabs?.length || 0}마디</span>
         </div>
-      </div>
-
-      {/* Metadata grid */}
-      <div className="grid grid-cols-4 gap-2 rounded-xl border border-white/8 bg-white/[0.03] p-3">
-        {[
-          { label: '템포', value: `${tempo} BPM` },
-          { label: '키', value: data.key },
-          { label: '길이', value: formatDuration(data.duration) },
-          { label: '마디', value: `${data.tabs?.length || 0}` },
-        ].map((item) => (
-          <div key={item.label} className="text-center">
-            <p className="text-[10px] uppercase tracking-wide text-white/40">{item.label}</p>
-            <p className="mt-0.5 text-sm font-semibold text-white">{item.value}</p>
-          </div>
-        ))}
       </div>
 
       {/* Unified players */}
@@ -490,40 +468,6 @@ export default function NotationViewer({ data }: NotationViewerProps) {
           variant="dark"
         />
         <MIDIPlayer tabs={data.tabs || []} tempo={tempo} compact variant="dark" />
-      </div>
-
-      {/* Tab playback controls */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handlePlay}
-            className="rounded-full bg-[#ff8a3d] p-2 text-white hover:bg-[#ff9f5a]"
-            title={isPlaying ? '정지' : '탭 따라 연주'}
-          >
-            {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-          </button>
-          <button
-            onClick={handleReset}
-            className="rounded-full border border-white/10 bg-white/5 p-2 text-white/70 hover:bg-white/10"
-            title="처음으로"
-          >
-            <RotateCcw className="h-4 w-4" />
-          </button>
-          <span className="text-xs text-white/45">
-            진행 {data.tabs?.length ? Math.round((currentBeat / data.tabs.length) * 100) : 0}%
-          </span>
-        </div>
-        <select
-          value={playbackSpeed}
-          onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
-          className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/70"
-        >
-          <option value={0.5}>0.5x</option>
-          <option value={0.75}>0.75x</option>
-          <option value={1}>1x</option>
-          <option value={1.25}>1.25x</option>
-          <option value={1.5}>1.5x</option>
-        </select>
       </div>
 
       {/* 악보 타입 */}

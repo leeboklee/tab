@@ -533,10 +533,10 @@ export default function Home() {
           )}
 
           {activeSection === 'workspace' && (
-            <div className="rounded-2xl border border-white/8 bg-[#0f131c] p-5">
+            <div className="rounded-2xl border border-white/8 bg-[#0f131c] p-4 sm:p-5">
               {tabData ? (
-                <div className="grid gap-4 lg:grid-cols-[1fr,1.2fr]">
-                  <div className="rounded-xl border border-white/8 bg-black/30 p-2">
+                <div className="flex flex-col gap-4">
+                  <div className="overflow-hidden rounded-xl border border-white/8 bg-black/40">
                     <YouTubePlayer url={youtubeUrl} />
                   </div>
                   <div className="min-w-0">
