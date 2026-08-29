@@ -16,6 +16,7 @@ export interface AudioHealthResponse {
       yt_dlp_version?: string
       cookie_file_configured?: boolean
       cookies_from_browser_configured?: boolean
+      pot_provider_installed?: boolean
     }
     audio_analysis_deps?: {
       librosa?: boolean
@@ -60,6 +61,26 @@ export class RealAudioAPI {
     return this.request('/analyze-from-audio', { method: 'POST', body: JSON.stringify({ audio_id: audioId, quality }) })
   }
 
+  static async analyzeUpload(
+    file: File,
+    options?: { title?: string; artist?: string; quality?: 'balanced' | 'local_quality' }
+  ): Promise<AudioAnalysisResponse> {
+    const form = new FormData()
+    form.append('file', file)
+    if (options?.title) form.append('title', options.title)
+    if (options?.artist) form.append('artist', options.artist)
+    form.append('quality', options?.quality || 'balanced')
+    return this.requestForm('/analyze-upload', form)
+  }
+
+  static async uploadAudio(file: File, options?: { title?: string; artist?: string }): Promise<AudioAnalysisResponse> {
+    const form = new FormData()
+    form.append('file', file)
+    if (options?.title) form.append('title', options.title)
+    if (options?.artist) form.append('artist', options.artist)
+    return this.requestForm('/upload-audio', form)
+  }
+
   static async testAudioAnalysis(): Promise<AudioAnalysisResponse> {
     return this.request('/test-audio-analysis')
   }
@@ -86,6 +107,45 @@ export class RealAudioAPI {
   static async checkHealth(): Promise<boolean> {
     const health = await this.getHealth()
     return Boolean(health?.status === 'healthy')
+  }
+
+  private static async requestForm(path: string, form: FormData): Promise<AudioAnalysisResponse> {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), this.REQUEST_TIMEOUT_MS)
+
+    try {
+      const response = await fetch(`${REAL_AUDIO_API_BASE}${path}`, {
+        method: 'POST',
+        body: form,
+        signal: controller.signal,
+      })
+
+      if (!response.ok) {
+        try {
+          const body = await response.json()
+          if (body && typeof body === 'object' && ('error' in body || 'success' in body)) {
+            return {
+              success: Boolean(body.success),
+              data: body.data,
+              error: typeof body.error === 'string' ? body.error : `HTTP error! status: ${response.status}`,
+            }
+          }
+        } catch {
+          // fall through
+        }
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      return await response.json()
+    } catch (error) {
+      console.error(`Audio API form request failed for ${path}:`, error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }
+    } finally {
+      window.clearTimeout(timeout)
+    }
   }
 
   private static async request(path: string, init?: RequestInit): Promise<AudioAnalysisResponse> {
