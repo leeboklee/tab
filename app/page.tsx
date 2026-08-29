@@ -1,19 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
 import {
-  AlertTriangle,
   AudioLines,
-  CheckCircle2,
   Cpu,
-  FolderHeart,
-  Gauge,
   ListMusic,
   Search,
-  Sparkles,
   Upload,
-  Wand2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -63,13 +56,6 @@ interface AnalysisNotice {
   mode: 'audio_verified' | 'metadata_fallback' | 'preview_only'
   title: string
   detail: string
-}
-
-const sectionDescriptions: Record<AppSection, string> = {
-  discover: '입력, 추출 안정성, 실제 분석 준비 상태를 한 번에 확인합니다.',
-  workspace: '분석 결과, 탭, 코드 진행, 메타데이터를 워크스페이스로 분리합니다.',
-  practice: '연습용 보조 정보와 실제 분석 신뢰도를 확인합니다.',
-  library: '즐겨찾기 곡과 추천 작업 흐름을 관리합니다.',
 }
 
 const sampleUrls = [
@@ -199,13 +185,13 @@ export default function Home() {
   const [youtubeUrl, setYoutubeUrl] = useState('')
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [activeSection, setActiveSection] = useState<AppSection>('discover')
-  const [currentPage, setCurrentPage] = useState<'home' | 'result'>('home')
   const [useRealAnalysis, setUseRealAnalysis] = useState(true)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [tabData, setTabData] = useState<UITabData | null>(null)
   const [analysisNotice, setAnalysisNotice] = useState<AnalysisNotice | null>(null)
   const [health, setHealth] = useState<AudioHealthResponse | null>(null)
   const [healthError, setHealthError] = useState<string | null>(null)
+  const [healthLoading, setHealthLoading] = useState(true)
 
   useEffect(() => {
     let mounted = true
@@ -217,6 +203,7 @@ export default function Home() {
         return
       }
 
+      setHealthLoading(false)
       if (nextHealth) {
         setHealth(nextHealth)
         setHealthError(null)
@@ -259,7 +246,7 @@ export default function Home() {
   }, [])
 
   const pipelineReady = Boolean(health?.status === 'healthy')
-  const pipelineLabel = pipelineReady ? '실제 분석 연결됨' : '미리보기 모드'
+  const pipelineLabel = healthLoading ? '확인 중…' : pipelineReady ? '연결됨' : '미리보기'
   const ffmpegReady = Boolean(health?.services?.audio_pipeline?.ffmpeg_available)
   const librosaReady = Boolean(health?.services?.audio_analysis_deps?.librosa)
 
@@ -334,7 +321,6 @@ export default function Home() {
 
       setYoutubeUrl(targetUrl)
       setTabData(nextData)
-      setCurrentPage('result')
       setActiveSection('workspace')
     } catch (error) {
       console.error(error)
@@ -374,7 +360,6 @@ export default function Home() {
           'YouTube 없이 업로드한 음원으로 분석을 완료했습니다.',
       })
       setTabData(nextData)
-      setCurrentPage('result')
       setActiveSection('workspace')
       toast('업로드 음원 분석을 완료했습니다.', { icon: '✅' })
     } catch (error) {
@@ -385,24 +370,7 @@ export default function Home() {
     }
   }
 
-  const metadataMode = tabData?.metadata?.analysis_method?.includes('metadata') || tabData?.metadata?.analysis_method?.includes('preview')
-  const extractAttempts =
-    (tabData?.metadata?.pipeline_diagnostics?.extract_attempts as { name?: string; status?: string; error?: string }[] | undefined) || []
-  const audioDiagnostics =
-    (tabData?.metadata?.pipeline_diagnostics?.audio_analysis as {
-      pitch_source?: string
-      pitch_tab_status?: string
-      pitch_tab_confidence?: number
-      pitch_matched_measures?: number
-      pitch_total_measures?: number
-      pitch_rendered_notes?: number
-      pitch_slot_duration?: number
-    } | undefined) || null
-  const pitchConfidence =
-    typeof audioDiagnostics?.pitch_tab_confidence === 'number'
-      ? `${Math.round(audioDiagnostics.pitch_tab_confidence * 100)}%`
-      : '--'
-  const resultMode = analysisNotice?.mode || (tabData?.metadata?.result_mode as AnalysisNotice['mode'] | undefined) || 'preview_only'
+
   const notationData = tabData
     ? {
         ...tabData,
@@ -416,107 +384,73 @@ export default function Home() {
           video_id: tabData.metadata.video_id ?? '',
           thumbnail: tabData.metadata.thumbnail,
           tab_source: tabData.metadata.tab_source,
+          pipeline_status: tabData.metadata.pipeline_status,
+          pipeline_diagnostics: tabData.metadata.pipeline_diagnostics,
+          audio_id: (tabData.metadata as { audio_id?: string }).audio_id ?? '',
         },
       }
     : null
-  const resultTone =
-    resultMode === 'audio_verified' ? 'text-[#8ef5b5] border-[#8ef5b5]/30 bg-[#8ef5b5]/10' : resultMode === 'metadata_fallback'
-      ? 'text-[#ffd76a] border-[#ffd76a]/30 bg-[#ffd76a]/10'
-      : 'text-[#8cc8ff] border-[#8cc8ff]/30 bg-[#8cc8ff]/10'
 
   const summaryCards = [
     {
-      label: '추출 엔진',
-      value: ffmpegReady ? `FFmpeg 연결 (${health?.services?.audio_pipeline?.ffmpeg_source || 'system'})` : 'FFmpeg 미연결',
-      tone: ffmpegReady ? 'ok' : 'warn',
+      label: '엔진',
+      value: healthLoading ? '…' : ffmpegReady ? 'OK' : '—',
+      tone: healthLoading ? 'idle' : ffmpegReady ? 'ok' : 'warn',
       icon: AudioLines,
     },
     {
-      label: '오디오 분석',
-      value: librosaReady ? '파형 분석 준비됨' : '메타데이터 폴백 가능성 높음',
+      label: '분석',
+      value: librosaReady ? 'OK' : '—',
       tone: librosaReady ? 'ok' : 'warn',
       icon: Cpu,
     },
     {
-      label: '현재 결과',
-      value: tabData ? `${tabData.title} / ${analysisNotice?.title || tabData.metadata?.status_summary || tabData.difficulty}` : '아직 결과 없음',
+      label: '결과',
+      value: tabData ? tabData.title : '—',
       tone: tabData ? 'ok' : 'idle',
       icon: ListMusic,
     },
   ]
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#24304d_0%,#0b1020_45%,#06070b_100%)] text-white">
+    <main className="min-h-screen bg-[#080b12] text-white">
       <Navigation
         activeSection={activeSection}
-        currentPage={currentPage}
         onSectionChange={setActiveSection}
         pipelineStatusLabel={pipelineLabel}
       />
 
-      <div className="mx-auto max-w-7xl px-4 pb-16 pt-8 sm:px-6 lg:px-8">
-        <section className="grid gap-6 lg:grid-cols-[1.4fr,0.8fr]">
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(140deg,rgba(255,255,255,0.12),rgba(255,255,255,0.02))] p-6 shadow-[0_32px_80px_rgba(0,0,0,0.38)]"
-          >
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="rounded-full border border-[#ffcf66]/35 bg-[#ffcf66]/12 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-[#ffcf66]">
-                Competitive Review Applied
-              </span>
-              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70">
-                {sectionDescriptions[activeSection]}
-              </span>
+      <div className="mx-auto max-w-5xl px-4 pb-12 pt-6 sm:px-6">
+        <section className="grid gap-5 lg:grid-cols-[1fr,220px]">
+          <div className="rounded-2xl border border-white/8 bg-[#0f131c] p-5 sm:p-6">
+            <div className="mb-5">
+              <h2 className="text-2xl font-semibold text-white sm:text-3xl">YouTube URL → 기타 탭</h2>
+              <p className="mt-1 text-sm text-white/50">링크 넣고 분석 시작</p>
             </div>
 
-            <div className="mt-6 max-w-3xl">
-              <h2 className="text-4xl font-semibold leading-tight text-white sm:text-5xl">
-                YouTube 음원추출 안정성을 먼저 올리고
-                <br />
-                탭 워크스페이스를 메뉴형 구조로 분리합니다.
-              </h2>
-              <p className="mt-4 text-base leading-7 text-white/72">
-                입력, 실제 분석 상태, 결과, 연습도구, 보관함을 한 화면에 뒤섞지 않고 분리했습니다.
-                실제 서버가 준비되지 않으면 미리보기 모드로 명확히 표시합니다.
-              </p>
-            </div>
-
-            <div className="mt-8 rounded-[28px] border border-white/10 bg-[#0d1326] p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-white/60">YouTube URL</p>
-                  <p className="mt-1 text-xs text-white/45">짧은 링크, watch, embed, shorts 형식을 지원합니다.</p>
-                </div>
-                <label className="flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80">
-                  <input
-                    checked={useRealAnalysis}
-                    onChange={(event) => setUseRealAnalysis(event.target.checked)}
-                    type="checkbox"
-                    className="h-4 w-4 accent-[#ff9f43]"
-                  />
-                  실제 분석 우선
-                </label>
-              </div>
-
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+            <div className="space-y-3">
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <input
                   value={youtubeUrl}
                   onChange={(event) => setYoutubeUrl(event.target.value)}
                   placeholder="https://www.youtube.com/watch?v=..."
-                  className="min-h-[56px] flex-1 rounded-2xl border border-white/12 bg-white/5 px-4 text-base text-white outline-none transition placeholder:text-white/30 focus:border-[#ff9f43]"
+                  className="min-h-[48px] flex-1 rounded-xl border border-white/10 bg-white/5 px-4 text-sm text-white outline-none placeholder:text-white/30 focus:border-[#ff8a3d]"
                 />
                 <button
                   onClick={() => handleAnalyze()}
                   disabled={isAnalyzing}
-                  className="inline-flex min-h-[56px] items-center justify-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#ff8a3d,#ffcf66)] px-5 font-semibold text-[#171717] transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-55"
+                  className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-[#ff8a3d] px-5 text-sm font-semibold text-white transition hover:bg-[#ff9f5a] disabled:opacity-50"
                 >
-                  {isAnalyzing ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#171717]/20 border-t-[#171717]" /> : <Search className="h-5 w-5" />}
-                  <span>{isAnalyzing ? '분석 중' : '분석 시작'}</span>
+                  {isAnalyzing ? (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  ) : (
+                    <Search className="h-4 w-4" />
+                  )}
+                  {isAnalyzing ? '분석 중' : '분석'}
                 </button>
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {sampleUrls.map((url) => (
                   <button
                     key={url}
@@ -524,308 +458,128 @@ export default function Home() {
                       setYoutubeUrl(url)
                       void handleAnalyze(url)
                     }}
-                    className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/70 transition hover:bg-white/10"
+                    className="rounded-lg border border-white/8 bg-white/5 px-2.5 py-1 text-xs text-white/55 hover:bg-white/10"
                   >
-                    샘플 실행
+                    샘플
                   </button>
                 ))}
+                <label className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-white/50">
+                  <input
+                    checked={useRealAnalysis}
+                    onChange={(event) => setUseRealAnalysis(event.target.checked)}
+                    type="checkbox"
+                    className="h-3.5 w-3.5 accent-[#ff8a3d]"
+                  />
+                  실제 분석
+                </label>
               </div>
 
-              <div className="mt-5 border-t border-white/10 pt-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-white/60">또는 음원 파일 업로드</p>
-                    <p className="mt-1 text-xs text-white/45">
-                      YouTube 봇 차단 시 / 코딩 없이 쓰는 친구용 — mp3, wav, m4a, webm, flac
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <label className="flex min-h-[56px] flex-1 cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-white/20 bg-white/[0.03] px-4 text-sm text-white/70 transition hover:border-[#ff9f43]/50 hover:bg-white/[0.05]">
-                    <Upload className="h-5 w-5 shrink-0 text-[#ffcf66]" />
-                    <span className="truncate">
-                      {uploadFile ? uploadFile.name : '파일 선택 (최대 약 80MB)'}
-                    </span>
+              <div className="border-t border-white/8 pt-4">
+                <p className="mb-2 text-xs text-white/45">또는 음원 업로드 · mp3, wav, m4a</p>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <label className="flex min-h-[44px] flex-1 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.02] px-3 text-sm text-white/60 hover:border-white/25">
+                    <Upload className="h-4 w-4 shrink-0 text-white/40" />
+                    <span className="truncate">{uploadFile ? uploadFile.name : '파일 선택'}</span>
                     <input
                       type="file"
                       accept=".wav,.mp3,.m4a,.webm,.ogg,.opus,.aac,.flac,audio/*"
                       className="hidden"
-                      onChange={(event) => {
-                        const next = event.target.files?.[0] || null
-                        setUploadFile(next)
-                      }}
+                      onChange={(event) => setUploadFile(event.target.files?.[0] || null)}
                     />
                   </label>
                   <button
                     onClick={() => void handleAnalyzeUpload()}
                     disabled={isAnalyzing || !uploadFile}
-                    className="inline-flex min-h-[56px] items-center justify-center gap-2 rounded-2xl border border-[#ffcf66]/40 bg-[#ffcf66]/12 px-5 font-semibold text-[#ffcf66] transition hover:bg-[#ffcf66]/20 disabled:cursor-not-allowed disabled:opacity-45"
+                    className="min-h-[44px] rounded-xl border border-white/10 px-4 text-sm text-white/80 hover:bg-white/5 disabled:opacity-40"
                   >
-                    {isAnalyzing ? (
-                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#ffcf66]/25 border-t-[#ffcf66]" />
-                    ) : (
-                      <Upload className="h-5 w-5" />
-                    )}
-                    <span>{isAnalyzing ? '분석 중' : '업로드 분석'}</span>
+                    업로드 분석
                   </button>
                 </div>
               </div>
             </div>
-          </motion.div>
+          </div>
 
-          <div className="grid gap-4">
+          <div className="flex flex-col gap-2">
             {summaryCards.map((card) => {
               const Icon = card.icon
               const color =
-                card.tone === 'ok' ? 'text-[#8ef5b5]' : card.tone === 'warn' ? 'text-[#ffd76a]' : 'text-white/72'
+                card.tone === 'ok' ? 'text-emerald-400' : card.tone === 'warn' ? 'text-amber-400' : 'text-white/50'
               return (
-                <div key={card.label} className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-white/55">{card.label}</span>
-                    <Icon className={`h-5 w-5 ${color}`} />
+                <div key={card.label} className="rounded-xl border border-white/8 bg-[#0f131c] px-4 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-white/45">{card.label}</span>
+                    <Icon className={`h-3.5 w-3.5 ${color}`} />
                   </div>
-                  <p className="mt-3 text-lg font-semibold text-white">{card.value}</p>
+                  <p className="mt-1 truncate text-sm font-medium text-white">{card.value}</p>
                 </div>
               )
             })}
-
-            <div className="rounded-[28px] border border-white/10 bg-[#111827] p-5">
-              <div className="flex items-start gap-3">
-                {pipelineReady ? (
-                  <CheckCircle2 className="mt-0.5 h-5 w-5 text-[#7ef0a5]" />
-                ) : (
-                  <AlertTriangle className="mt-0.5 h-5 w-5 text-[#ffcf66]" />
-                )}
-                <div>
-                  <p className="text-sm font-semibold text-white">{pipelineLabel}</p>
-                  <p className="mt-2 text-sm leading-6 text-white/65">
-                    {pipelineReady
-                      ? '실제 음원 추출과 오디오 분석 엔드포인트가 응답 중입니다.'
-                      : healthError || '실제 분석 서버가 내려가 있거나 포트 충돌이 있습니다.'}
-                  </p>
-                </div>
-              </div>
-            </div>
+            {!pipelineReady && !healthLoading && (
+              <p className="px-1 text-xs text-amber-400/80">{healthError || '서버 미연결'}</p>
+            )}
           </div>
         </section>
 
-        <section className="mt-8 grid gap-6 lg:grid-cols-[1.15fr,0.85fr]">
-          {activeSection === 'discover' && (
-            <>
-              <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
-                <h3 className="text-xl font-semibold text-white">추출 안정성 진단</h3>
-                <div className="mt-5 grid gap-4 md:grid-cols-2">
-                  <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                    <p className="text-sm text-white/50">실제 분석 서버</p>
-                    <p className="mt-2 text-lg font-semibold text-white">{pipelineReady ? '정상 응답' : '연결 실패 또는 포트 충돌'}</p>
-                    <p className="mt-2 text-sm text-white/60">`npm run dev:backend`는 정상 서버가 이미 떠 있으면 재사용하고, 비정상 점유만 중지 안내합니다.</p>
-                  </div>
-                  <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                    <p className="text-sm text-white/50">yt-dlp / FFmpeg</p>
-                    <p className="mt-2 text-lg font-semibold text-white">
-                      {health?.services?.audio_pipeline?.yt_dlp_version || '버전 미확인'}
-                    </p>
-                    <p className="mt-2 text-sm text-white/60">
-                      FFmpeg {ffmpegReady ? '연결됨' : '미연결'} / 쿠키 파일{' '}
-                      {health?.services?.audio_pipeline?.cookie_file_configured ? '설정됨' : '미설정'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
-                <h3 className="text-xl font-semibold text-white">경쟁사에서 가져온 구조 기준</h3>
-                <div className="mt-5 space-y-4 text-sm leading-6 text-white/72">
-                  <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                    <p className="font-semibold text-white">Songsterr형</p>
-                    <p className="mt-2">검색과 결과를 분리하고, 플레이어와 탭을 워크스페이스로 고정해 탐색 피로를 줄입니다.</p>
-                  </div>
-                  <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                    <p className="font-semibold text-white">Moises형</p>
-                    <p className="mt-2">분리, BPM, 키, 섹션, 메트로놈 같은 연습 가치를 상단 카드로 노출해 실제 효용을 먼저 보여줍니다.</p>
-                  </div>
-                </div>
-              </div>
-            </>
+        <section className="mt-6">
+          {activeSection === 'discover' && pipelineReady && (
+            <div className="flex flex-wrap gap-2 text-xs text-white/45">
+              <span className="rounded-lg border border-white/8 bg-white/5 px-2.5 py-1">
+                yt-dlp {health?.services?.audio_pipeline?.yt_dlp_version || '—'}
+              </span>
+              <span className="rounded-lg border border-white/8 bg-white/5 px-2.5 py-1">
+                ffmpeg {ffmpegReady ? 'OK' : '—'}
+              </span>
+            </div>
           )}
 
           {activeSection === 'workspace' && (
-            <>
-              <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
-                {tabData ? (
-                  <>
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm text-white/45">현재 워크스페이스</p>
-                        <h3 className="mt-1 text-2xl font-semibold text-white">{tabData.title}</h3>
-                        <p className="mt-2 text-sm text-white/60">{tabData.artist}</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <span className={`rounded-full border px-3 py-1 text-sm font-medium ${resultTone}`}>
-                          {analysisNotice?.title || tabData.metadata?.status_summary || '결과 상태 미확인'}
-                        </span>
-                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm text-white/75">
-                          {tabData.key}
-                        </span>
-                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm text-white/75">
-                          {tabData.tempo} BPM
-                        </span>
-                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-sm text-white/75">
-                          {tabData.difficulty}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="mt-6 grid gap-4 lg:grid-cols-[0.78fr,1.22fr]">
-                      <div className="rounded-[28px] border border-white/10 bg-[#0d1326] p-4">
-                        <YouTubePlayer url={youtubeUrl} />
-                      </div>
-                      <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[#f7f4ec] p-1 text-black">
-                        {notationData ? <NotationViewer data={notationData} /> : null}
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="rounded-3xl border border-dashed border-white/14 bg-[#0d1326] p-10 text-center text-white/60">
-                    결과가 아직 없습니다. 탐색 메뉴에서 URL을 넣고 분석을 시작하세요.
+            <div className="rounded-2xl border border-white/8 bg-[#0f131c] p-4 sm:p-5">
+              {tabData ? (
+                <div className="flex flex-col gap-4">
+                  <div className="overflow-hidden rounded-xl border border-white/8 bg-black/40">
+                    <YouTubePlayer url={youtubeUrl} />
                   </div>
-                )}
-              </div>
-
-              <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
-                <h3 className="text-xl font-semibold text-white">결과 신뢰도</h3>
-                {tabData ? (
-                  <div className="mt-5 space-y-4">
-                    <div className={`rounded-3xl border p-5 ${resultTone}`}>
-                      <p className="text-sm opacity-70">결과 모드</p>
-                      <p className="mt-2 text-lg font-semibold">
-                        {resultMode === 'audio_verified'
-                          ? '실제 오디오 분석 성공'
-                          : resultMode === 'metadata_fallback'
-                            ? '추출 성공, 분석 폴백'
-                            : '미리보기 분석'}
-                      </p>
-                      <p className="mt-2 text-sm opacity-80">{analysisNotice?.detail || tabData.metadata.status_summary || '결과 상태 설명이 없습니다.'}</p>
-                    </div>
-                    <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                      <p className="text-sm text-white/50">분석 방식</p>
-                      <p className="mt-2 text-lg font-semibold text-white">{tabData.metadata.analysis_method || 'unknown'}</p>
-                      <p className="mt-2 text-sm text-white/60">
-                        {metadataMode ? '실제 추출 실패 또는 서버 미연결 시 생성된 미리보기 성격 결과입니다.' : '실제 음원 추출 이후 생성된 결과입니다.'}
-                      </p>
-                    </div>
-                    <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                      <p className="text-sm text-white/50">탭 생성 근거</p>
-                      <p className="mt-2 text-lg font-semibold text-white">
-                        {tabData.metadata.tab_source === 'audio_pitch' ? '오디오 피치 기반' : tabData.metadata.tab_source || 'unknown'}
-                      </p>
-                      <p className="mt-2 text-sm text-white/60">
-                        {audioDiagnostics?.pitch_source || '피치 진단 없음'} / 신뢰도 {pitchConfidence}
-                        {typeof audioDiagnostics?.pitch_matched_measures === 'number' && typeof audioDiagnostics?.pitch_total_measures === 'number'
-                          ? ` / 매칭 ${audioDiagnostics.pitch_matched_measures}/${audioDiagnostics.pitch_total_measures}`
-                          : ''}
-                      </p>
-                      {typeof audioDiagnostics?.pitch_rendered_notes === 'number' ? (
-                        <p className="mt-1 text-sm text-white/50">
-                          표기 음 {audioDiagnostics.pitch_rendered_notes}개
-                          {typeof audioDiagnostics.pitch_slot_duration === 'number' ? ` / 단위 ${audioDiagnostics.pitch_slot_duration}s` : ''}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                      <p className="text-sm text-white/50">추출 시도</p>
-                      {extractAttempts.length > 0 ? (
-                        <div className="mt-3 space-y-2">
-                          {extractAttempts.slice(0, 4).map((attempt, index) => (
-                            <p key={`${attempt.name || 'attempt'}-${index}`} className="text-sm text-white/72">
-                              {attempt.name}: {attempt.status}
-                              {attempt.error ? ` / ${attempt.error}` : ''}
-                            </p>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="mt-2 text-sm text-white/60">추출 진단 정보가 아직 없습니다.</p>
-                      )}
-                    </div>
+                  <div className="min-w-0">
+                    {notationData ? <NotationViewer data={notationData} /> : null}
                   </div>
-                ) : (
-                  <p className="mt-4 text-sm text-white/60">분석 후 신뢰도 요약이 여기에 표시됩니다.</p>
-                )}
-              </div>
-            </>
+                </div>
+              ) : (
+                <p className="py-8 text-center text-sm text-white/45">URL 분석 후 결과가 여기 표시됩니다.</p>
+              )}
+            </div>
           )}
 
-          {activeSection === 'practice' && (
-            <>
-              <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
-                <h3 className="text-xl font-semibold text-white">연습용 신호</h3>
-                <div className="mt-5 grid gap-4 md:grid-cols-3">
-                  <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                    <Gauge className="h-5 w-5 text-[#7ef0a5]" />
-                    <p className="mt-3 text-sm text-white/50">템포</p>
-                    <p className="mt-2 text-2xl font-semibold text-white">{tabData?.tempo ?? '--'} BPM</p>
-                  </div>
-                  <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                    <Sparkles className="h-5 w-5 text-[#ffcf66]" />
-                    <p className="mt-3 text-sm text-white/50">기법</p>
-                    <p className="mt-2 text-2xl font-semibold text-white">{tabData?.metadata.techniques?.join(', ') || '--'}</p>
-                  </div>
-                  <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                    <Wand2 className="h-5 w-5 text-[#8cc8ff]" />
-                    <p className="mt-3 text-sm text-white/50">코드 진행</p>
-                    <p className="mt-2 text-2xl font-semibold text-white">{tabData?.chord_progressions.length ?? 0}</p>
-                  </div>
-                </div>
+          {activeSection === 'practice' && tabData && (
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-white/8 bg-[#0f131c] p-4">
+                <p className="text-xs text-white/45">템포</p>
+                <p className="mt-1 text-xl font-semibold">{tabData.tempo} BPM</p>
               </div>
+              <div className="rounded-xl border border-white/8 bg-[#0f131c] p-4">
+                <p className="text-xs text-white/45">키</p>
+                <p className="mt-1 text-xl font-semibold">{tabData.key}</p>
+              </div>
+              <div className="rounded-xl border border-white/8 bg-[#0f131c] p-4">
+                <p className="text-xs text-white/45">난이도</p>
+                <p className="mt-1 text-xl font-semibold">{tabData.difficulty}</p>
+              </div>
+            </div>
+          )}
 
-              <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
-                <h3 className="text-xl font-semibold text-white">연습 흐름 추천</h3>
-                <div className="mt-5 space-y-4 text-sm leading-6 text-white/72">
-                  <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                    1. 실제 분석 결과면 워크스페이스에서 탭을 먼저 확인합니다.
-                  </div>
-                  <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                    2. 미리보기 결과면 먼저 추출 안정화부터 해결한 뒤 다시 분석합니다.
-                  </div>
-                  <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                    3. BPM과 코드 진행이 안정적으로 나오면 그다음에 세부 주법 컴포넌트를 확장합니다.
-                  </div>
-                </div>
-              </div>
-            </>
+          {activeSection === 'practice' && !tabData && (
+            <p className="text-sm text-white/45">먼저 곡을 분석하세요.</p>
           )}
 
           {activeSection === 'library' && (
-            <>
-              <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
-                <div className="mb-5 flex items-center gap-3">
-                  <FolderHeart className="h-5 w-5 text-[#ff9f43]" />
-                  <h3 className="text-xl font-semibold text-white">즐겨찾기 보관함</h3>
-                </div>
-                <FavoritesManager
-                  onFavoriteClick={(url) => {
-                    setYoutubeUrl(url)
-                    setActiveSection('discover')
-                    toast('URL을 입력창에 채웠습니다. 분석을 시작하세요.', { icon: '🎯' })
-                  }}
-                />
-              </div>
-
-              <div className="rounded-[32px] border border-white/10 bg-white/5 p-6">
-                <h3 className="text-xl font-semibold text-white">지금 구조에서 남은 작업</h3>
-                <div className="mt-5 space-y-4 text-sm leading-6 text-white/72">
-                  <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                    제한 영상 대응을 위해 쿠키 파일과 브라우저 쿠키 설정 흐름을 더 쉽게 안내해야 합니다.
-                  </div>
-                  <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                    결과 워크스페이스의 세부 플레이어와 코드 분석은 별도 메뉴 페이지로 더 분리할 수 있습니다.
-                  </div>
-                  <div className="rounded-3xl border border-white/8 bg-[#0d1326] p-5">
-                    실제 음원 분석 결과를 기준으로 코드 진행과 주법 표시 정확도를 더 검증해야 합니다.
-                  </div>
-                </div>
-              </div>
-            </>
+            <div className="rounded-2xl border border-white/8 bg-[#0f131c] p-5">
+              <FavoritesManager
+                onFavoriteClick={(url) => {
+                  setYoutubeUrl(url)
+                  setActiveSection('discover')
+                  toast('URL 입력됨', { icon: '🎯' })
+                }}
+              />
+            </div>
           )}
         </section>
       </div>

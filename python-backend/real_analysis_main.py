@@ -17,6 +17,7 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 from cachetools import TTLCache
@@ -1132,6 +1133,35 @@ async def get_audio_record(audio_id: str):
     except Exception as exc:
         logger.error("Failed to load audio record %s: %s", audio_id, exc)
         return _analysis_error_response(str(exc), failed_stage="audio_load")
+
+
+@app.get("/audio/{audio_id}/stream")
+async def stream_audio(audio_id: str):
+    try:
+        record = pipeline.load_record(audio_id)
+    except FileNotFoundError:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Audio not found")
+
+    audio_path = Path(record.get("audio_path", ""))
+    if not audio_path.is_file():
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Audio file missing on disk")
+
+    media_types = {
+        ".wav": "audio/wav",
+        ".mp3": "audio/mpeg",
+        ".m4a": "audio/mp4",
+        ".webm": "audio/webm",
+        ".ogg": "audio/ogg",
+        ".opus": "audio/opus",
+        ".aac": "audio/aac",
+        ".flac": "audio/flac",
+    }
+    media_type = media_types.get(audio_path.suffix.lower(), "application/octet-stream")
+    return FileResponse(audio_path, media_type=media_type, filename=audio_path.name)
 
 
 @app.post("/analyze-from-audio", response_model=ApiResponse)

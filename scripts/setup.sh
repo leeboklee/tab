@@ -115,7 +115,7 @@ setup_env() {
     if [ ! -f ".env.local" ]; then
         cat > .env.local << EOF
 # Guitar2Tabs 환경 변수
-NEXT_PUBLIC_REAL_AUDIO_API_BASE=http://localhost:8002
+NEXT_PUBLIC_REAL_AUDIO_API_BASE=/api/python
 REAL_AUDIO_API_BASE=http://localhost:8002
 # YTDLP_COOKIE_FILE=/path/to/cookies.txt
 # YTDLP_COOKIES_FROM_BROWSER=chrome

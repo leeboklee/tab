@@ -11,10 +11,7 @@
   
   body {
     @apply font-guitar text-white antialiased;
-    background:
-      radial-gradient(circle at top, rgba(255, 159, 67, 0.18), transparent 24%),
-      radial-gradient(circle at 20% 20%, rgba(72, 187, 255, 0.16), transparent 22%),
-      linear-gradient(180deg, #0b1020 0%, #07080d 100%);
+    background: #080b12;
     min-height: 100vh;
   }
 
