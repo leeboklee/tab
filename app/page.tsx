@@ -384,6 +384,7 @@ export default function Home() {
           video_id: tabData.metadata.video_id ?? '',
           thumbnail: tabData.metadata.thumbnail,
           tab_source: tabData.metadata.tab_source,
+          audio_id: (tabData.metadata as { audio_id?: string }).audio_id ?? '',
         },
       }
     : null

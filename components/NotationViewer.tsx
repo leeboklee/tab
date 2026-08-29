@@ -9,6 +9,7 @@ import ChordAnalyzer from './ChordAnalyzer'
 import AchievementCelebration from './AchievementCelebration'
 import AdvancedAudioPlayer from './AdvancedAudioPlayer'
 import MIDIPlayer from './MIDIPlayer'
+import { RealAudioAPI } from '@/app/lib/real-audio-api'
 
 interface TabData {
   title: string
@@ -36,6 +37,7 @@ interface TabData {
     analysis_method: string
     video_id: string
     thumbnail?: string
+    audio_id?: string
   }
 }
 
@@ -399,6 +401,7 @@ export default function NotationViewer({ data }: NotationViewerProps) {
   }
 
   const lyrics = getLyrics()
+  const audioStreamUrl = data.metadata.audio_id ? RealAudioAPI.audioStreamUrl(data.metadata.audio_id) : undefined
 
   return (
     <div className="space-y-6">
@@ -434,6 +437,7 @@ export default function NotationViewer({ data }: NotationViewerProps) {
 
       {/* Advanced Audio Player */}
       <AdvancedAudioPlayer
+        audioUrl={audioStreamUrl}
         tabs={data.tabs || []}
         tempo={tempo}
         isPlaying={isPlaying}

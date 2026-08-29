@@ -131,6 +131,10 @@ export class RealAudioAPI {
     return Boolean(health?.status === 'healthy')
   }
 
+  static audioStreamUrl(audioId: string): string {
+    return `${this.apiBase()}/audio/${encodeURIComponent(audioId)}/stream`
+  }
+
   private static async requestForm(path: string, form: FormData): Promise<AudioAnalysisResponse> {
     const controller = new AbortController()
     const timeout = window.setTimeout(() => controller.abort(), this.REQUEST_TIMEOUT_MS)
