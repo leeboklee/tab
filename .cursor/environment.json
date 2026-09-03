@@ -1,6 +1,6 @@
 {
   "name": "Guitar2Tabs",
-  "install": "sudo apt-get update\nsudo apt-get install -y python3.12-venv ffmpeg tor\nnpm ci\ncp -n .env.example .env.local || true\ncd python-backend && python3 -m venv venv && ./venv/bin/pip install --upgrade pip && ./venv/bin/pip install -r requirements-minimal.txt cachetools==5.5.1 aiofiles python-dotenv bgutil-ytdlp-pot-provider",
+  "install": "sudo apt-get update\nsudo apt-get install -y python3.12-venv ffmpeg tor\nnpm ci\ncp -n .env.example .env.local || true\ncd python-backend && python3 -m venv venv && ./venv/bin/pip install --upgrade pip && ./venv/bin/pip install -r requirements-minimal.txt cachetools==5.5.1 aiofiles python-dotenv && grep -q 'YTDLP_USE_TOR=true' ../.env.local || printf '\\nYTDLP_USE_TOR=true\\nYTDLP_AUTO_TOR=true\\nYTDLP_START_POT_PROVIDER=true\\n' >> ../.env.local",
   "start": "npm run dev",
   "ports": [
     { "name": "Next.js frontend", "port": 3019 },
