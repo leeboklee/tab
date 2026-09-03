@@ -1139,12 +1139,12 @@ async def get_audio_record(audio_id: str):
 async def stream_audio(audio_id: str):
     try:
         record = pipeline.load_record(audio_id)
+        audio_path = await run_in_threadpool(pipeline.resolve_stream_path, record)
     except FileNotFoundError:
         from fastapi import HTTPException
 
         raise HTTPException(status_code=404, detail="Audio not found")
 
-    audio_path = Path(record.get("audio_path", ""))
     if not audio_path.is_file():
         from fastapi import HTTPException
 
@@ -1161,7 +1161,13 @@ async def stream_audio(audio_id: str):
         ".flac": "audio/flac",
     }
     media_type = media_types.get(audio_path.suffix.lower(), "application/octet-stream")
-    return FileResponse(audio_path, media_type=media_type, filename=audio_path.name)
+    # inline + filename helps browsers stream in <audio> instead of forcing download
+    return FileResponse(
+        audio_path,
+        media_type=media_type,
+        filename=audio_path.name,
+        content_disposition_type="inline",
+    )
 
 
 @app.post("/analyze-from-audio", response_model=ApiResponse)

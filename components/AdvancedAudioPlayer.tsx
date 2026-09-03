@@ -11,11 +11,15 @@ interface AdvancedAudioPlayerProps {
     frets: number[]
     notes: string[]
     technique: string
+    start_time?: number
+    duration?: number
   }[]
   isPlaying?: boolean
   onPlay?: () => void
   onPause?: () => void
   onReset?: () => void
+  onTimeUpdate?: (currentTime: number) => void
+  playbackRate?: number
   compact?: boolean
   variant?: 'light' | 'dark'
 }
@@ -28,6 +32,8 @@ export default function AdvancedAudioPlayer({
   onPlay,
   onPause,
   onReset,
+  onTimeUpdate,
+  playbackRate = 1,
   compact = false,
   variant = 'dark',
 }: AdvancedAudioPlayerProps) {
@@ -38,6 +44,7 @@ export default function AdvancedAudioPlayer({
   const [volume, setVolume] = useState(0.85)
   const [isMuted, setIsMuted] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [isBuffering, setIsBuffering] = useState(false)
 
   const playing = externalPlaying ?? isPlaying
   const isDark = variant === 'dark'
@@ -46,35 +53,68 @@ export default function AdvancedAudioPlayer({
     const audio = audioRef.current
     if (!audio) return
 
-    const onTimeUpdate = () => setCurrentTime(audio.currentTime)
-    const onLoaded = () => {
+    const handleTimeUpdate = () => {
+      setCurrentTime(audio.currentTime)
+      onTimeUpdate?.(audio.currentTime)
+    }
+    const handleLoaded = () => {
       setDuration(audio.duration || 0)
       setLoadError(null)
+      setIsBuffering(false)
     }
-    const onEnded = () => {
+    const handleEnded = () => {
       setIsPlaying(false)
       onPause?.()
     }
-    const onError = () => setLoadError('음원을 불러오지 못했습니다.')
+    const handleError = () => {
+      setIsBuffering(false)
+      setLoadError('음원을 불러오지 못했습니다. 다시 분석하거나 업로드해 주세요.')
+    }
+    const handleWaiting = () => setIsBuffering(true)
+    const handleCanPlay = () => setIsBuffering(false)
 
-    audio.addEventListener('timeupdate', onTimeUpdate)
-    audio.addEventListener('loadedmetadata', onLoaded)
-    audio.addEventListener('ended', onEnded)
-    audio.addEventListener('error', onError)
+    audio.addEventListener('timeupdate', handleTimeUpdate)
+    audio.addEventListener('loadedmetadata', handleLoaded)
+    audio.addEventListener('ended', handleEnded)
+    audio.addEventListener('error', handleError)
+    audio.addEventListener('waiting', handleWaiting)
+    audio.addEventListener('canplay', handleCanPlay)
 
     return () => {
-      audio.removeEventListener('timeupdate', onTimeUpdate)
-      audio.removeEventListener('loadedmetadata', onLoaded)
-      audio.removeEventListener('ended', onEnded)
-      audio.removeEventListener('error', onError)
+      audio.removeEventListener('timeupdate', handleTimeUpdate)
+      audio.removeEventListener('loadedmetadata', handleLoaded)
+      audio.removeEventListener('ended', handleEnded)
+      audio.removeEventListener('error', handleError)
+      audio.removeEventListener('waiting', handleWaiting)
+      audio.removeEventListener('canplay', handleCanPlay)
     }
-  }, [audioUrl, onPause])
+  }, [audioUrl, onPause, onTimeUpdate])
 
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = isMuted ? 0 : volume
     }
   }, [volume, isMuted])
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackRate
+    }
+  }, [playbackRate, audioUrl])
+
+  // Keep <audio> in sync when parent toggles play state (e.g. measure follow)
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio || !audioUrl || externalPlaying === undefined) return
+    if (externalPlaying && audio.paused) {
+      void audio.play().catch(() => {
+        setLoadError('재생 권한이 필요합니다. 버튼을 다시 눌러주세요.')
+        onPause?.()
+      })
+    } else if (!externalPlaying && !audio.paused) {
+      audio.pause()
+    }
+  }, [externalPlaying, audioUrl, onPause])
 
   const togglePlayPause = async () => {
     const audio = audioRef.current
@@ -102,6 +142,7 @@ export default function AdvancedAudioPlayer({
       audio.pause()
       audio.currentTime = 0
       setCurrentTime(0)
+      onTimeUpdate?.(0)
     }
     setIsPlaying(false)
     onReset?.()
@@ -113,6 +154,7 @@ export default function AdvancedAudioPlayer({
     if (!audio) return
     audio.currentTime = value
     setCurrentTime(value)
+    onTimeUpdate?.(value)
   }
 
   const formatTime = (seconds: number) => {
@@ -121,8 +163,6 @@ export default function AdvancedAudioPlayer({
     const s = Math.floor(seconds % 60)
     return `${m}:${s.toString().padStart(2, '0')}`
   }
-
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0
 
   const shellClass = isDark
     ? 'rounded-xl border border-white/8 bg-white/[0.03]'
@@ -147,8 +187,12 @@ export default function AdvancedAudioPlayer({
           음원 재생
         </h3>
         {!compact && (
-          <span className={mutedClass}>{tempo} BPM · {tabs.length}마디</span>
+          <span className={mutedClass}>
+            {tempo} BPM · {tabs.length}마디
+            {isBuffering ? ' · 버퍼링…' : ''}
+          </span>
         )}
+        {compact && isBuffering ? <span className={mutedClass}>버퍼링…</span> : null}
       </div>
 
       {!audioUrl ? (
@@ -166,16 +210,18 @@ export default function AdvancedAudioPlayer({
               onClick={() => void togglePlayPause()}
               className={btnPrimary}
               title={playing ? '일시정지' : '재생'}
+              type="button"
             >
               {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             </button>
-            <button onClick={handleReset} className={btnSecondary} title="처음으로">
+            <button onClick={handleReset} className={btnSecondary} title="처음으로" type="button">
               <RotateCcw className="h-4 w-4" />
             </button>
             <button
               onClick={() => setIsMuted(!isMuted)}
               className={btnSecondary}
               title={isMuted ? '음소거 해제' : '음소거'}
+              type="button"
             >
               {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
             </button>
@@ -207,7 +253,7 @@ export default function AdvancedAudioPlayer({
             />
           )}
 
-          <audio ref={audioRef} src={audioUrl} preload="metadata" className="hidden" />
+          <audio ref={audioRef} src={audioUrl} preload="auto" className="hidden" />
         </>
       )}
     </div>

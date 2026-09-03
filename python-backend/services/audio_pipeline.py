@@ -3,6 +3,7 @@ import logging
 import os
 import shutil
 import socket
+import subprocess
 import time
 import uuid
 from importlib import metadata as importlib_metadata
@@ -177,6 +178,57 @@ class AudioPipelineService:
         with metadata_file.open("r", encoding="utf-8") as fp:
             record = json.load(fp)
         return record
+
+    def resolve_stream_path(self, record: Dict[str, Any]) -> Path:
+        """Prefer compact playback.mp3 for browser streaming; fall back to source audio."""
+        audio_path = Path(str(record.get("audio_path") or ""))
+        work_dir = audio_path.parent if audio_path.name else self.storage_root / str(record.get("audio_id") or "")
+        playback_path = work_dir / "playback.mp3"
+
+        if playback_path.is_file() and playback_path.stat().st_size > 1024:
+            return playback_path
+
+        if audio_path.is_file() and audio_path.suffix.lower() == ".mp3":
+            return audio_path
+
+        if audio_path.is_file() and self.ffmpeg_path:
+            try:
+                result = subprocess.run(
+                    [
+                        self.ffmpeg_path,
+                        "-y",
+                        "-i",
+                        str(audio_path),
+                        "-codec:a",
+                        "libmp3lame",
+                        "-q:a",
+                        "4",
+                        str(playback_path),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=180,
+                    check=False,
+                )
+                if result.returncode == 0 and playback_path.is_file() and playback_path.stat().st_size > 1024:
+                    record["playback_path"] = str(playback_path.resolve())
+                    record["playback_ext"] = "mp3"
+                    try:
+                        self._write_record(work_dir, record)
+                    except Exception:
+                        pass
+                    return playback_path
+                logger.warning(
+                    "playback.mp3 encode failed for %s: %s",
+                    record.get("audio_id"),
+                    (result.stderr or result.stdout or "")[-400:],
+                )
+            except Exception as exc:
+                logger.warning("playback.mp3 encode error for %s: %s", record.get("audio_id"), exc)
+
+        if not audio_path.is_file():
+            raise FileNotFoundError(f"Audio file missing on disk: {audio_path}")
+        return audio_path
 
     def ingest_uploaded_audio(
         self,
