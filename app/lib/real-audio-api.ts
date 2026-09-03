@@ -72,7 +72,16 @@ export class RealAudioAPI {
   }
 
   static async analyzeAudio(url: string, quality: 'balanced' | 'cloud' = 'balanced'): Promise<AudioAnalysisResponse> {
-    return this.request('/analyze', { method: 'POST', body: JSON.stringify({ url, quality }) })
+    let last: AudioAnalysisResponse = { success: false, error: 'Unknown error' }
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      last = await this.request('/analyze', { method: 'POST', body: JSON.stringify({ url, quality }) })
+      if (last.success) return last
+      const err = (last.error || '').toLowerCase()
+      const retryable = err.includes('status: 500') || err.includes('status: 502') || err.includes('status: 503') || err.includes('fetch') || err.includes('abort')
+      if (!retryable || attempt === 1) break
+      await new Promise((r) => setTimeout(r, 1200))
+    }
+    return last
   }
 
   static async extractAudio(url: string): Promise<AudioAnalysisResponse> {
