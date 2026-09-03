@@ -150,6 +150,9 @@ class AudioPipelineService:
                     }
                 )
                 logger.warning("Audio extraction attempt failed (%s): %s", name, exc)
+                # Rotate Tor exit between proxy attempts — some exits are bot-flagged.
+                if name.startswith("proxy_") and self._env_flag("YTDLP_ROTATE_TOR", default=True):
+                    self._rotate_tor_circuit()
 
         if not info or not audio_path:
             failure = classify_extraction_failure(attempts)
@@ -231,36 +234,60 @@ class AudioPipelineService:
         return record
 
     def _attempt_specs(self, work_dir: Path) -> List[Dict[str, Any]]:
-        # Community-recommended clients (yt-dlp wiki / 2025-2026 bot guidance):
-        # android_vr / tv+web_safari / web_embedded often work without cookies on residential IPs.
-        # Datacenter IPs still frequently need Tor proxy or cookies + PO tokens.
+        # 2026 YouTube bot guidance (datacenter/cloud):
+        # Tor/residential proxy + mweb + PO Token + EJS challenge solver is the most reliable.
+        # Older clients (android_vr / default) now often fail without cookies.
         proxy = self._effective_proxy()
         specs: List[Dict[str, Any]] = []
+        pot_ready = pot_provider_installed()
 
-        client_variants: List[Tuple[str, Optional[Dict[str, Any]]]] = [
-            ("android_vr", {"youtube": {"player_client": ["android_vr"]}}),
-            ("tv_web_safari", {"youtube": {"player_client": ["tv", "web_safari"]}}),
-            ("web_embedded", {"youtube": {"player_client": ["web_embedded"]}}),
-            ("default_best_audio", None),
-            ("ios_android", {"youtube": {"player_client": ["ios", "android"]}}),
-        ]
+        if proxy and pot_ready:
+            specs.append(
+                {
+                    "name": "proxy_mweb_with_pot",
+                    "opts": self._build_ydl_opts(
+                        work_dir,
+                        proxy=proxy,
+                        extractor_args=self._youtube_extractor_args(["mweb"]),
+                    ),
+                }
+            )
+            specs.append(
+                {
+                    "name": "proxy_web_safari_with_pot",
+                    "opts": self._build_ydl_opts(
+                        work_dir,
+                        proxy=proxy,
+                        extractor_args=self._youtube_extractor_args(["web_safari"]),
+                    ),
+                }
+            )
 
         if proxy:
-            # Tor/residential proxy: default client is most reliable (android_vr often needs PO token).
-            proxy_order = ["default_best_audio", "tv_web_safari", "web_embedded"]
-            proxy_lookup = dict(client_variants)
-            for name in proxy_order:
-                extractor_args = proxy_lookup.get(name)
-                specs.append(
-                    {
-                        "name": f"proxy_{name}",
-                        "opts": self._build_ydl_opts(
-                            work_dir,
-                            proxy=proxy,
-                            extractor_args=extractor_args,
-                        ),
-                    }
-                )
+            specs.append(
+                {
+                    "name": "proxy_default_best_audio",
+                    "opts": self._build_ydl_opts(work_dir, proxy=proxy),
+                }
+            )
+            specs.append(
+                {
+                    "name": "proxy_tv_web_safari",
+                    "opts": self._build_ydl_opts(
+                        work_dir,
+                        proxy=proxy,
+                        extractor_args=self._youtube_extractor_args(["tv", "web_safari"]),
+                    ),
+                }
+            )
+
+        client_variants: List[Tuple[str, Optional[Dict[str, Any]]]] = [
+            ("android_vr", self._youtube_extractor_args(["android_vr"])),
+            ("tv_web_safari", self._youtube_extractor_args(["tv", "web_safari"])),
+            ("web_embedded", self._youtube_extractor_args(["web_embedded"])),
+            ("default_best_audio", None),
+            ("ios_android", self._youtube_extractor_args(["ios", "android"])),
+        ]
 
         for name, extractor_args in client_variants:
             specs.append(
@@ -270,14 +297,13 @@ class AudioPipelineService:
                 }
             )
 
-        if pot_provider_installed():
-            # Plugin auto-attaches PO tokens when HTTP provider is reachable (:4416).
+        if pot_ready:
             specs.append(
                 {
                     "name": "mweb_with_pot_provider",
                     "opts": self._build_ydl_opts(
                         work_dir,
-                        extractor_args={"youtube": {"player_client": ["mweb"]}},
+                        extractor_args=self._youtube_extractor_args(["mweb"]),
                     ),
                 }
             )
@@ -286,7 +312,7 @@ class AudioPipelineService:
                     "name": "web_safari_with_pot_provider",
                     "opts": self._build_ydl_opts(
                         work_dir,
-                        extractor_args={"youtube": {"player_client": ["web_safari"]}},
+                        extractor_args=self._youtube_extractor_args(["web_safari"]),
                     ),
                 }
             )
@@ -300,9 +326,7 @@ class AudioPipelineService:
                     "opts": self._build_ydl_opts(
                         work_dir,
                         cookie_file=cookie_file,
-                        extractor_args={
-                            "youtube": {"player_client": ["default", "-web_creator"]}
-                        },
+                        extractor_args=self._youtube_extractor_args(["default", "-web_creator"]),
                     ),
                 }
             )
@@ -312,7 +336,7 @@ class AudioPipelineService:
                     "opts": self._build_ydl_opts(
                         work_dir,
                         cookie_file=cookie_file,
-                        extractor_args={"youtube": {"player_client": ["web_safari"]}},
+                        extractor_args=self._youtube_extractor_args(["web_safari"]),
                     ),
                 }
             )
@@ -325,9 +349,7 @@ class AudioPipelineService:
                     "opts": self._build_ydl_opts(
                         work_dir,
                         cookies_from_browser=cookies_from_browser,
-                        extractor_args={
-                            "youtube": {"player_client": ["default", "-web_creator"]}
-                        },
+                        extractor_args=self._youtube_extractor_args(["default", "-web_creator"]),
                     ),
                 }
             )
@@ -337,12 +359,20 @@ class AudioPipelineService:
                     "opts": self._build_ydl_opts(
                         work_dir,
                         cookies_from_browser=cookies_from_browser,
-                        extractor_args={"youtube": {"player_client": ["web_safari"]}},
+                        extractor_args=self._youtube_extractor_args(["web_safari"]),
                     ),
                 }
             )
 
         return specs
+
+    def _youtube_extractor_args(self, player_clients: List[str]) -> Dict[str, Any]:
+        youtube_args: Dict[str, Any] = {"player_client": player_clients}
+        args: Dict[str, Any] = {"youtube": youtube_args}
+        pot_base = os.getenv("YTDLP_POT_BASE_URL", "http://127.0.0.1:4416").strip()
+        if pot_provider_installed() and pot_base:
+            args["youtubepot-bgutilhttp"] = {"base_url": pot_base}
+        return args
 
     def _build_ydl_opts(
         self,
@@ -365,6 +395,8 @@ class AudioPipelineService:
             "format_sort": ["hasaud", "acodec", "abr", "asr"],
             # Pace requests slightly — burst patterns look more automated to YouTube.
             "sleep_interval_requests": float(os.getenv("YTDLP_SLEEP_REQUESTS", "0.5") or "0.5"),
+            # Required for n-challenge / EJS solver on modern YouTube clients.
+            "remote_components": ["ejs:github"],
         }
 
         if extractor_args:
@@ -538,6 +570,73 @@ class AudioPipelineService:
             if candidate and Path(candidate).exists():
                 return candidate
         return None
+
+    @classmethod
+    def _rotate_tor_circuit(cls) -> bool:
+        """Ask Tor for a new circuit (NEWNYM). Best-effort via ControlSocket."""
+        if not cls._env_flag("YTDLP_ROTATE_TOR", default=True):
+            return False
+
+        cookie_path = Path(os.getenv("YTDLP_TOR_COOKIE", "/run/tor/control.authcookie"))
+        control_sock = os.getenv("YTDLP_TOR_CONTROL_SOCKET", "/run/tor/control").strip()
+
+        # Prefer Tor ControlSocket (Debian packages disable TCP ControlPort by default).
+        if Path(control_sock).exists():
+            try:
+                import subprocess
+
+                script = (
+                    "COOKIE=$(xxd -p -c 256 '{cookie}' 2>/dev/null || od -An -tx1 '{cookie}' | tr -d ' \\n'); "
+                    "printf 'AUTHENTICATE %s\\r\\nSIGNAL NEWNYM\\r\\nQUIT\\r\\n' \"$COOKIE\" "
+                    "| socat - UNIX-CONNECT:'{sock}'"
+                ).format(cookie=cookie_path, sock=control_sock)
+                result = subprocess.run(
+                    ["sudo", "bash", "-lc", script],
+                    capture_output=True,
+                    text=True,
+                    timeout=8,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    time.sleep(float(os.getenv("YTDLP_TOR_ROTATE_WAIT", "4") or "4"))
+                    logger.info("Requested Tor NEWNYM via ControlSocket")
+                    return True
+                logger.debug(
+                    "Tor ControlSocket NEWNYM failed rc=%s out=%s err=%s",
+                    result.returncode,
+                    (result.stdout or "")[:120],
+                    (result.stderr or "")[:120],
+                )
+            except Exception as exc:
+                logger.debug("Tor ControlSocket rotation failed: %s", exc)
+
+        # Fallback: soft-reload Tor (new circuits on next connect).
+        try:
+            import subprocess
+
+            result = subprocess.run(
+                ["sudo", "service", "tor", "reload"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            if result.returncode != 0:
+                result = subprocess.run(
+                    ["sudo", "killall", "-HUP", "tor"],
+                    capture_output=True,
+                    text=True,
+                    timeout=8,
+                    check=False,
+                )
+            if result.returncode == 0:
+                time.sleep(float(os.getenv("YTDLP_TOR_ROTATE_WAIT", "4") or "4"))
+                logger.info("Reloaded Tor to rotate circuits")
+                return True
+        except Exception as exc:
+            logger.debug("Tor reload rotation failed: %s", exc)
+            return False
+        return False
 
     @staticmethod
     def _cookie_file_path() -> Optional[str]:

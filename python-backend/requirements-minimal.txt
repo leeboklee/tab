@@ -2,8 +2,9 @@ fastapi
 uvicorn[standard]
 pydantic
 python-multipart
-yt-dlp
+yt-dlp[default]>=2026.8.30
 bgutil-ytdlp-pot-provider
+curl_cffi
 requests
 numpy
 scipy
