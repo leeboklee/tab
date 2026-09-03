@@ -192,6 +192,7 @@ export default function Home() {
   const [health, setHealth] = useState<AudioHealthResponse | null>(null)
   const [healthError, setHealthError] = useState<string | null>(null)
   const [healthLoading, setHealthLoading] = useState(true)
+  const [uploadHint, setUploadHint] = useState(false)
 
   useEffect(() => {
     let mounted = true
@@ -280,17 +281,20 @@ export default function Home() {
           nextData = await analyzeFromOEmbed(targetUrl)
           setAnalysisNotice({
             mode: 'preview_only',
-            title: isBotBlock ? 'YouTube 차단 — 음원 업로드 권장' : '실패 후 미리보기 전환',
+            title: isBotBlock ? 'YouTube 차단 — 음원 업로드' : '실패 후 미리보기',
             detail: isBotBlock
-              ? `${result.error || 'YouTube 봇 차단'}\n아래 음원 파일 업로드로 같은 분석을 할 수 있습니다.`
+              ? '클라우드 IP에서 YouTube가 막혔습니다. 아래 음원 파일을 올리면 같은 분석을 할 수 있습니다.'
               : result.error || '실제 분석 실패로 미리보기 결과를 대신 표시합니다.',
           })
-          toast(
-            isBotBlock
-              ? 'YouTube 추출이 막혔습니다. 음원 파일을 업로드해 보세요.'
-              : '실제 분석이 실패해 미리보기 결과로 전환했습니다.',
-            { icon: '⚠️' }
-          )
+          if (isBotBlock) {
+            setUploadHint(true)
+            setActiveSection('discover')
+            setTabData(null)
+            toast('YouTube 추출 불가 — 음원 파일을 업로드해 주세요.', { icon: '⚠️' })
+            setYoutubeUrl(targetUrl)
+            return
+          }
+          toast('실제 분석이 실패해 미리보기 결과로 전환했습니다.', { icon: '⚠️' })
         } else {
           nextData = result.data as UITabData
           const resultMode = nextData.metadata?.result_mode === 'audio_verified' ? 'audio_verified' : 'metadata_fallback'
@@ -306,6 +310,7 @@ export default function Home() {
           toast(resultMode === 'audio_verified' ? '실제 분석 결과를 불러왔습니다.' : '추출은 성공했지만 메타데이터 폴백이 적용되었습니다.', {
             icon: resultMode === 'audio_verified' ? '✅' : '⚠️',
           })
+          setUploadHint(false)
         }
       } else {
         nextData = await analyzeFromOEmbed(targetUrl)
@@ -359,6 +364,7 @@ export default function Home() {
           nextData.metadata?.status_summary ||
           'YouTube 없이 업로드한 음원으로 분석을 완료했습니다.',
       })
+      setUploadHint(false)
       setTabData(nextData)
       setActiveSection('workspace')
       toast('업로드 음원 분석을 완료했습니다.', { icon: '✅' })
@@ -474,8 +480,16 @@ export default function Home() {
                 </label>
               </div>
 
-              <div className="border-t border-white/8 pt-4">
-                <p className="mb-2 text-xs text-white/45">또는 음원 업로드 · mp3, wav, m4a</p>
+              <div
+                className={`border-t border-white/8 pt-4 ${
+                  uploadHint ? 'rounded-xl border border-[#ff8a3d]/50 bg-[#ff8a3d]/10 p-3' : ''
+                }`}
+              >
+                <p className="mb-2 text-xs text-white/45">
+                  {uploadHint
+                    ? 'YouTube 차단됨 — 음원 파일을 올려 분석을 계속하세요'
+                    : '또는 음원 업로드 · mp3, wav, m4a'}
+                </p>
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <label className="flex min-h-[44px] flex-1 cursor-pointer items-center gap-2 rounded-xl border border-dashed border-white/15 bg-white/[0.02] px-3 text-sm text-white/60 hover:border-white/25">
                     <Upload className="h-4 w-4 shrink-0 text-white/40" />

@@ -79,10 +79,16 @@ def test_attempt_specs_include_proxy_when_tor_enabled(tmp_path, monkeypatch):
     monkeypatch.setenv("YTDLP_AUTO_TOR", "false")
     pipeline = AudioPipelineService(storage_root=tmp_path)
     names = [spec["name"] for spec in pipeline._attempt_specs(tmp_path)]
-    assert names[0] == "proxy_default_best_audio"
-    specs = {spec["name"]: spec for spec in pipeline._attempt_specs(tmp_path)}
-    assert specs["proxy_default_best_audio"]["opts"]["proxy"] == "socks5h://127.0.0.1:9050"
-    assert specs["proxy_default_best_audio"]["opts"]["js_runtimes"]["node"]["path"]
+    assert "proxy_default_best_audio" in names
+    # Prefer Tor + mweb + PO Token when pot provider is installed.
+    if pot_provider_installed():
+        assert names[0] == "proxy_mweb_with_pot"
+        specs = {spec["name"]: spec for spec in pipeline._attempt_specs(tmp_path)}
+        assert specs["proxy_mweb_with_pot"]["opts"]["proxy"] == "socks5h://127.0.0.1:9050"
+        assert "ejs:github" in specs["proxy_mweb_with_pot"]["opts"]["remote_components"]
+        assert specs["proxy_mweb_with_pot"]["opts"]["js_runtimes"]["node"]["path"]
+    else:
+        assert names[0] == "proxy_default_best_audio"
 
 
 def test_attempt_specs_cookie_excludes_web_creator(tmp_path, monkeypatch):
