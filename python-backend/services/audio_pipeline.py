@@ -573,41 +573,70 @@ class AudioPipelineService:
 
     @classmethod
     def _rotate_tor_circuit(cls) -> bool:
-        """Ask Tor ControlPort for a new circuit (NEWNYM). Best-effort."""
-        cookie_paths = (
-            Path("/run/tor/control.authcookie"),
-            Path("/var/run/tor/control.authcookie"),
-        )
-        cookie = b""
-        for path in cookie_paths:
-            if path.exists():
-                try:
-                    cookie = path.read_bytes()
-                    break
-                except OSError:
-                    continue
-        if not cookie:
+        """Ask Tor for a new circuit (NEWNYM). Best-effort via ControlSocket."""
+        if not cls._env_flag("YTDLP_ROTATE_TOR", default=True):
             return False
 
-        host = os.getenv("YTDLP_TOR_CONTROL_HOST", "127.0.0.1").strip() or "127.0.0.1"
-        try:
-            port = int(os.getenv("YTDLP_TOR_CONTROL_PORT", "9051") or "9051")
-        except ValueError:
-            port = 9051
+        cookie_path = Path(os.getenv("YTDLP_TOR_COOKIE", "/run/tor/control.authcookie"))
+        control_sock = os.getenv("YTDLP_TOR_CONTROL_SOCKET", "/run/tor/control").strip()
 
+        # Prefer Tor ControlSocket (Debian packages disable TCP ControlPort by default).
+        if Path(control_sock).exists():
+            try:
+                import subprocess
+
+                script = (
+                    "COOKIE=$(xxd -p -c 256 '{cookie}' 2>/dev/null || od -An -tx1 '{cookie}' | tr -d ' \\n'); "
+                    "printf 'AUTHENTICATE %s\\r\\nSIGNAL NEWNYM\\r\\nQUIT\\r\\n' \"$COOKIE\" "
+                    "| socat - UNIX-CONNECT:'{sock}'"
+                ).format(cookie=cookie_path, sock=control_sock)
+                result = subprocess.run(
+                    ["sudo", "bash", "-lc", script],
+                    capture_output=True,
+                    text=True,
+                    timeout=8,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    time.sleep(float(os.getenv("YTDLP_TOR_ROTATE_WAIT", "4") or "4"))
+                    logger.info("Requested Tor NEWNYM via ControlSocket")
+                    return True
+                logger.debug(
+                    "Tor ControlSocket NEWNYM failed rc=%s out=%s err=%s",
+                    result.returncode,
+                    (result.stdout or "")[:120],
+                    (result.stderr or "")[:120],
+                )
+            except Exception as exc:
+                logger.debug("Tor ControlSocket rotation failed: %s", exc)
+
+        # Fallback: soft-reload Tor (new circuits on next connect).
         try:
-            with socket.create_connection((host, port), timeout=2.0) as sock:
-                auth = f"AUTHENTICATE {cookie.hex()}\r\n".encode()
-                sock.sendall(auth)
-                sock.sendall(b"SIGNAL NEWNYM\r\n")
-                sock.sendall(b"QUIT\r\n")
-                sock.recv(256)
-            time.sleep(float(os.getenv("YTDLP_TOR_ROTATE_WAIT", "3") or "3"))
-            logger.info("Requested Tor NEWNYM circuit rotation")
-            return True
-        except OSError as exc:
-            logger.debug("Tor circuit rotation failed: %s", exc)
+            import subprocess
+
+            result = subprocess.run(
+                ["sudo", "service", "tor", "reload"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            if result.returncode != 0:
+                result = subprocess.run(
+                    ["sudo", "killall", "-HUP", "tor"],
+                    capture_output=True,
+                    text=True,
+                    timeout=8,
+                    check=False,
+                )
+            if result.returncode == 0:
+                time.sleep(float(os.getenv("YTDLP_TOR_ROTATE_WAIT", "4") or "4"))
+                logger.info("Reloaded Tor to rotate circuits")
+                return True
+        except Exception as exc:
+            logger.debug("Tor reload rotation failed: %s", exc)
             return False
+        return False
 
     @staticmethod
     def _cookie_file_path() -> Optional[str]:
