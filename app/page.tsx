@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   AudioLines,
   Cpu,
@@ -193,6 +193,7 @@ export default function Home() {
   const [healthError, setHealthError] = useState<string | null>(null)
   const [healthLoading, setHealthLoading] = useState(true)
   const [uploadHint, setUploadHint] = useState(false)
+  const resultsRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     let mounted = true
@@ -327,6 +328,9 @@ export default function Home() {
       setYoutubeUrl(targetUrl)
       setTabData(nextData)
       setActiveSection('workspace')
+      requestAnimationFrame(() => {
+        resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
     } catch (error) {
       console.error(error)
       toast(`분석 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`, { icon: '❌' })
@@ -367,6 +371,9 @@ export default function Home() {
       setUploadHint(false)
       setTabData(nextData)
       setActiveSection('workspace')
+      requestAnimationFrame(() => {
+        resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
       toast('업로드 음원 분석을 완료했습니다.', { icon: '✅' })
     } catch (error) {
       console.error(error)
@@ -469,15 +476,21 @@ export default function Home() {
                     샘플
                   </button>
                 ))}
-                <label className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-white/50">
-                  <input
-                    checked={useRealAnalysis}
-                    onChange={(event) => setUseRealAnalysis(event.target.checked)}
-                    type="checkbox"
-                    className="h-3.5 w-3.5 accent-[#ff8a3d]"
-                  />
-                  실제 분석
-                </label>
+                {pipelineReady ? (
+                  <span className="ml-auto rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-xs text-emerald-300">
+                    실제 분석
+                  </span>
+                ) : (
+                  <label className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-white/50">
+                    <input
+                      checked={useRealAnalysis}
+                      onChange={(event) => setUseRealAnalysis(event.target.checked)}
+                      type="checkbox"
+                      className="h-3.5 w-3.5 accent-[#ff8a3d]"
+                    />
+                    미리보기 모드
+                  </label>
+                )}
               </div>
 
               <div
@@ -547,7 +560,21 @@ export default function Home() {
           )}
 
           {activeSection === 'workspace' && (
-            <div className="rounded-2xl border border-white/8 bg-[#0f131c] p-4 sm:p-5">
+            <div ref={resultsRef} id="analysis-results" className="rounded-2xl border border-white/8 bg-[#0f131c] p-4 sm:p-5">
+              {analysisNotice && (
+                <div
+                  className={`mb-4 rounded-xl border px-3 py-2 text-sm ${
+                    analysisNotice.mode === 'audio_verified'
+                      ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-100'
+                      : analysisNotice.mode === 'preview_only'
+                        ? 'border-amber-400/30 bg-amber-400/10 text-amber-100'
+                        : 'border-sky-400/30 bg-sky-400/10 text-sky-100'
+                  }`}
+                >
+                  <p className="font-medium">{analysisNotice.title}</p>
+                  <p className="mt-0.5 text-xs opacity-80">{analysisNotice.detail}</p>
+                </div>
+              )}
               {tabData ? (
                 <div className="flex flex-col gap-4">
                   <div className="overflow-hidden rounded-xl border border-white/8 bg-black/40">

@@ -72,7 +72,29 @@ export class RealAudioAPI {
   }
 
   static async analyzeAudio(url: string, quality: 'balanced' | 'cloud' = 'balanced'): Promise<AudioAnalysisResponse> {
-    return this.request('/analyze', { method: 'POST', body: JSON.stringify({ url, quality }) })
+    // Quick Tunnel / Cloudflare often cuts long YouTube extracts (~30-100s) while
+    // the backend keeps working. Retry so a later attempt hits the warm cache.
+    let last: AudioAnalysisResponse = { success: false, error: 'Unknown error' }
+    const waitsMs = [0, 5000, 15000, 30000]
+    for (let attempt = 0; attempt < waitsMs.length; attempt += 1) {
+      if (waitsMs[attempt] > 0) {
+        await new Promise((r) => setTimeout(r, waitsMs[attempt]))
+      }
+      last = await this.request('/analyze', { method: 'POST', body: JSON.stringify({ url, quality }) })
+      if (last.success) return last
+      const err = (last.error || '').toLowerCase()
+      const retryable =
+        err.includes('status: 500') ||
+        err.includes('status: 502') ||
+        err.includes('status: 503') ||
+        err.includes('status: 504') ||
+        err.includes('fetch') ||
+        err.includes('abort') ||
+        err.includes('timeout') ||
+        err.includes('network')
+      if (!retryable || attempt === waitsMs.length - 1) break
+    }
+    return last
   }
 
   static async extractAudio(url: string): Promise<AudioAnalysisResponse> {

@@ -20,6 +20,8 @@ interface TabData {
     frets: number[]
     notes: string[]
     technique: string
+    start_time?: number
+    duration?: number
   }[]
   chord_progressions: {
     chord: string
@@ -59,6 +61,7 @@ export default function NotationViewer({ data }: NotationViewerProps) {
   const [tempo, setTempo] = useState(data.tempo)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
+  const measureRefs = useRef<(HTMLDivElement | null)[]>([])
 
   const notationTypes = [
     {
@@ -163,43 +166,32 @@ export default function NotationViewer({ data }: NotationViewerProps) {
     }
   }
 
-  // 재생/정지 핸들러
-  const handlePlay = () => {
-    if (isPlaying) {
-      setIsPlaying(false)
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
-      }
-    } else {
-      setIsPlaying(true)
-      const beatInterval = 60000 / (tempo * playbackSpeed) // BPM을 밀리초로 변환
-      
-      intervalRef.current = setInterval(() => {
-        setCurrentBeat(prev => {
-          const nextBeat = prev + 1
-          if (nextBeat >= (data.tabs?.length || 0)) {
-            setIsPlaying(false)
-            if (intervalRef.current) {
-              clearInterval(intervalRef.current)
-              intervalRef.current = null
-            }
-            return 0
-          }
-          
-          // 현재 마디의 기타 소리 재생
-          if (data.tabs && data.tabs[nextBeat]) {
-            data.tabs[nextBeat].frets.forEach((fret, stringIndex) => {
-              if (fret > 0) {
-                generateGuitarSound(fret, stringIndex)
-              }
-            })
-          }
-          
-          return nextBeat
-        })
-      }, beatInterval)
+  // 음원 재생 시각 → 타브 마디 동기화
+  const syncBeatFromTime = (timeSec: number) => {
+    const tabs = data.tabs || []
+    if (!tabs.length) {
+      setCurrentBeat(0)
+      return
     }
+
+    let idx = 0
+    for (let i = 0; i < tabs.length; i += 1) {
+      const start =
+        typeof tabs[i].start_time === 'number'
+          ? Number(tabs[i].start_time)
+          : (i * 60) / Math.max(tempo, 1)
+      if (start <= timeSec) idx = i
+      else break
+    }
+
+    setCurrentBeat((prev) => {
+      if (prev === idx) return prev
+      const el = measureRefs.current[idx]
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }
+      return idx
+    })
   }
 
   // 리셋 핸들러
@@ -464,6 +456,8 @@ export default function NotationViewer({ data }: NotationViewerProps) {
           onPlay={() => setIsPlaying(true)}
           onPause={() => setIsPlaying(false)}
           onReset={handleReset}
+          onTimeUpdate={syncBeatFromTime}
+          playbackRate={playbackSpeed}
           compact
           variant="dark"
         />
@@ -615,12 +609,13 @@ export default function NotationViewer({ data }: NotationViewerProps) {
                   {data.tabs && data.tabs.length > 0 ? data.tabs.map((tab, beatIndex) => (
                     <motion.div
                       key={beatIndex}
+                      ref={(el) => { measureRefs.current[beatIndex] = el }}
                       className={`flex items-center mb-1 py-2 px-2 rounded ${
                         currentBeat === beatIndex ? 'bg-primary-50 border-l-4 border-primary-500' : 'hover:bg-gray-50'
                       }`}
-                      initial={{ opacity: 0, x: -20 }}
+                      initial={false}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.3, delay: beatIndex * 0.05 }}
+                      transition={{ duration: 0.15 }}
                     >
                       <div className="w-8 text-sm text-gray-600 font-mono">
                         {beatIndex + 1}
@@ -754,7 +749,7 @@ export default function NotationViewer({ data }: NotationViewerProps) {
                             className="bg-blue-100 text-blue-800 px-3 py-2 rounded-lg text-sm font-medium"
                             initial={{ opacity: 0, scale: 0.8 }}
                             animate={{ opacity: 1, scale: 1 }}
-                            transition={{ delay: index * 0.1 }}
+                            transition={{ duration: 0.15 }}
                           >
                             <div className="text-center">
                               <div className="text-lg font-bold">{note.note}{note.octave}</div>
@@ -832,7 +827,7 @@ export default function NotationViewer({ data }: NotationViewerProps) {
                         className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium"
                         initial={{ opacity: 0, scale: 0.8 }}
                         animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: index * 0.1 }}
+                        transition={{ duration: 0.15 }}
                       >
                         {chord.chord}
                       </motion.span>
