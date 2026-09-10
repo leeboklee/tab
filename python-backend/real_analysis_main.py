@@ -1223,8 +1223,18 @@ async def analyze_music(request: AnalysisRequest):
 
         async def compute() -> Tuple[Dict[str, Any], Optional[float], Dict[str, Any]]:
             extraction_start = time.perf_counter()
-            record = await run_in_threadpool(pipeline.extract_audio, request.url)
-            extract_sec = time.perf_counter() - extraction_start
+            cached_record = await run_in_threadpool(pipeline.find_cached_record_for_url, request.url)
+            if cached_record:
+                record = cached_record
+                extract_sec = 0.0
+                logger.info(
+                    "Reusing cached extract %s for %s",
+                    record.get("audio_id"),
+                    request.url,
+                )
+            else:
+                record = await run_in_threadpool(pipeline.extract_audio, request.url)
+                extract_sec = time.perf_counter() - extraction_start
             analyze_start = time.perf_counter()
             data = await run_in_threadpool(_analyze_record, record, quality)
             analysis_sec = time.perf_counter() - analyze_start
@@ -1233,6 +1243,7 @@ async def analyze_music(request: AnalysisRequest):
                 "extract_sec": round(extract_sec, 3),
                 "analysis_sec": round(analysis_sec, 3),
                 "total_sec": round(total_sec, 3),
+                "extract_cache": "hit" if cached_record else "miss",
             }
 
         return await _run_cached_analysis(
