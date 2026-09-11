@@ -153,8 +153,12 @@ export class RealAudioAPI {
     return Boolean(health?.status === 'healthy')
   }
 
-  static audioStreamUrl(audioId: string): string {
-    return `${this.apiBase()}/audio/${encodeURIComponent(audioId)}/stream`
+  static audioStreamUrl(audioId: string, maxSeconds?: number): string {
+    const base = `${this.apiBase()}/audio/${encodeURIComponent(audioId)}/stream`
+    if (maxSeconds != null && Number.isFinite(maxSeconds) && maxSeconds > 0) {
+      return `${base}?max_seconds=${encodeURIComponent(String(maxSeconds))}`
+    }
+    return base
   }
 
   private static async requestForm(path: string, form: FormData): Promise<AudioAnalysisResponse> {

@@ -1136,10 +1136,11 @@ async def get_audio_record(audio_id: str):
 
 
 @app.get("/audio/{audio_id}/stream")
-async def stream_audio(audio_id: str):
+async def stream_audio(audio_id: str, max_seconds: Optional[float] = None):
+    """Stream extracted audio. Pass max_seconds to clip to the analysis/tab window."""
     try:
         record = pipeline.load_record(audio_id)
-        audio_path = await run_in_threadpool(pipeline.resolve_stream_path, record)
+        audio_path = await run_in_threadpool(pipeline.resolve_stream_path, record, max_seconds)
     except FileNotFoundError:
         from fastapi import HTTPException
 

@@ -233,10 +233,62 @@ class AudioPipelineService:
 
         return newest[1] if newest else None
 
-    def resolve_stream_path(self, record: Dict[str, Any]) -> Path:
-        """Prefer compact playback.mp3 for browser streaming; fall back to source audio."""
+    def resolve_stream_path(self, record: Dict[str, Any], max_seconds: Optional[float] = None) -> Path:
+        """Prefer compact playback.mp3 for browser streaming; fall back to source audio.
+
+        When max_seconds is set (tab-sync / analysis window), return a clipped
+        playback file so player duration matches tabs and UI badges.
+        """
         audio_path = Path(str(record.get("audio_path") or ""))
         work_dir = audio_path.parent if audio_path.name else self.storage_root / str(record.get("audio_id") or "")
+        clip_seconds: Optional[float] = None
+        if max_seconds is not None:
+            try:
+                clip_seconds = float(max_seconds)
+            except (TypeError, ValueError):
+                clip_seconds = None
+            if clip_seconds is not None and clip_seconds <= 0:
+                clip_seconds = None
+
+        if clip_seconds is not None:
+            clipped_path = work_dir / f"playback_{int(round(clip_seconds))}s.mp3"
+            if clipped_path.is_file() and clipped_path.stat().st_size > 1024:
+                return clipped_path
+            source_for_clip = audio_path
+            full_playback = work_dir / "playback.mp3"
+            if full_playback.is_file() and full_playback.stat().st_size > 1024:
+                source_for_clip = full_playback
+            if source_for_clip.is_file() and self.ffmpeg_path:
+                try:
+                    result = subprocess.run(
+                        [
+                            self.ffmpeg_path,
+                            "-y",
+                            "-i",
+                            str(source_for_clip),
+                            "-t",
+                            f"{clip_seconds:.3f}",
+                            "-codec:a",
+                            "libmp3lame",
+                            "-q:a",
+                            "4",
+                            str(clipped_path),
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=180,
+                        check=False,
+                    )
+                    if result.returncode == 0 and clipped_path.is_file() and clipped_path.stat().st_size > 1024:
+                        return clipped_path
+                    logger.warning(
+                        "clipped playback encode failed for %s: %s",
+                        record.get("audio_id"),
+                        (result.stderr or result.stdout or "")[-400:],
+                    )
+                except Exception as exc:
+                    logger.warning("clipped playback encode error for %s: %s", record.get("audio_id"), exc)
+
         playback_path = work_dir / "playback.mp3"
 
         if playback_path.is_file() and playback_path.stat().st_size > 1024:

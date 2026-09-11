@@ -426,7 +426,13 @@ export default function NotationViewer({ data }: NotationViewerProps) {
   }
 
   const lyrics = getLyrics()
-  const audioStreamUrl = data.metadata.audio_id ? RealAudioAPI.audioStreamUrl(data.metadata.audio_id) : undefined
+  const analysisDuration =
+    typeof data.duration === 'number' && Number.isFinite(data.duration) && data.duration > 0
+      ? data.duration
+      : undefined
+  const audioStreamUrl = data.metadata.audio_id
+    ? RealAudioAPI.audioStreamUrl(data.metadata.audio_id, analysisDuration)
+    : undefined
 
   return (
     <div className="space-y-4 text-white">
@@ -441,7 +447,13 @@ export default function NotationViewer({ data }: NotationViewerProps) {
           <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/70">{data.key}</span>
           <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/70">{tempo} BPM</span>
           <span className={`rounded-md border px-2 py-0.5 text-xs ${difficultyTone}`}>{data.difficulty}</span>
-          <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/70">{formatDuration(data.duration)}</span>
+          <span
+            className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/70"
+            data-testid="analysis-duration-badge"
+            title="분석·타브 동기 구간"
+          >
+            {formatDuration(data.duration)}
+          </span>
           <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-xs text-white/70">{data.tabs?.length || 0}마디</span>
         </div>
       </div>
@@ -458,10 +470,17 @@ export default function NotationViewer({ data }: NotationViewerProps) {
           onReset={handleReset}
           onTimeUpdate={syncBeatFromTime}
           playbackRate={playbackSpeed}
+          syncDuration={analysisDuration}
           compact
           variant="dark"
         />
-        <MIDIPlayer tabs={data.tabs || []} tempo={tempo} compact variant="dark" />
+        <MIDIPlayer
+          tabs={data.tabs || []}
+          tempo={tempo}
+          playbackRate={playbackSpeed}
+          compact
+          variant="dark"
+        />
       </div>
 
       {/* 악보 타입 */}

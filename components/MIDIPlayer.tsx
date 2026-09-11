@@ -11,6 +11,7 @@ interface MIDIPlayerProps {
     technique: string
   }[]
   tempo: number
+  playbackRate?: number
   compact?: boolean
   variant?: 'light' | 'dark'
 }
@@ -21,12 +22,19 @@ function midiNote(stringIndex: number, fret: number): number {
   return BASE_MIDI[stringIndex] + fret
 }
 
-export default function MIDIPlayer({ tabs, tempo, compact = false, variant = 'dark' }: MIDIPlayerProps) {
+export default function MIDIPlayer({
+  tabs,
+  tempo,
+  playbackRate = 1,
+  compact = false,
+  variant = 'dark',
+}: MIDIPlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const stopRef = useRef<(() => void) | null>(null)
 
   const isDark = variant === 'dark'
+  const rate = Number.isFinite(playbackRate) && playbackRate > 0 ? playbackRate : 1
 
   const stopPlayback = () => {
     stopRef.current?.()
@@ -50,7 +58,7 @@ export default function MIDIPlayer({ tabs, tempo, compact = false, variant = 'da
         envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.3 },
       }).toDestination()
 
-      const beatSec = 60 / tempo
+      const beatSec = 60 / (tempo * rate)
       let cancelled = false
       stopRef.current = () => {
         cancelled = true
@@ -69,7 +77,7 @@ export default function MIDIPlayer({ tabs, tempo, compact = false, variant = 'da
         })
       })
 
-      Tone.Transport.bpm.value = tempo
+      Tone.Transport.bpm.value = tempo * rate
       Tone.Transport.start()
       setIsPlaying(true)
 
@@ -162,8 +170,8 @@ export default function MIDIPlayer({ tabs, tempo, compact = false, variant = 'da
         >
           <Download className="h-4 w-4" />
         </button>
-        <p className={`ml-1 text-xs ${isDark ? 'text-white/40' : 'text-gray-500'}`}>
-          탭 음정만 간단히 들어보기
+        <p className={`ml-1 text-xs ${isDark ? 'text-white/40' : 'text-gray-500'}`} data-testid="midi-rate-label">
+          탭 음정 · {rate}x
         </p>
       </div>
     </div>

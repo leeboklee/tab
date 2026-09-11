@@ -20,6 +20,8 @@ interface AdvancedAudioPlayerProps {
   onReset?: () => void
   onTimeUpdate?: (currentTime: number) => void
   playbackRate?: number
+  /** Cap timeline to analysis/tab window so UI time matches tabs. */
+  syncDuration?: number
   compact?: boolean
   variant?: 'light' | 'dark'
 }
@@ -34,6 +36,7 @@ export default function AdvancedAudioPlayer({
   onReset,
   onTimeUpdate,
   playbackRate = 1,
+  syncDuration,
   compact = false,
   variant = 'dark',
 }: AdvancedAudioPlayerProps) {
@@ -49,16 +52,37 @@ export default function AdvancedAudioPlayer({
   const playing = externalPlaying ?? isPlaying
   const isDark = variant === 'dark'
 
+  const resolveDisplayDuration = (nativeDuration: number) => {
+    const native = Number.isFinite(nativeDuration) ? nativeDuration : 0
+    if (syncDuration != null && Number.isFinite(syncDuration) && syncDuration > 0) {
+      return native > 0 ? Math.min(native, syncDuration) : syncDuration
+    }
+    return native
+  }
+
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
 
     const handleTimeUpdate = () => {
+      const cap =
+        syncDuration != null && Number.isFinite(syncDuration) && syncDuration > 0
+          ? syncDuration
+          : null
+      if (cap != null && audio.currentTime >= cap) {
+        audio.pause()
+        audio.currentTime = cap
+        setCurrentTime(cap)
+        onTimeUpdate?.(cap)
+        setIsPlaying(false)
+        onPause?.()
+        return
+      }
       setCurrentTime(audio.currentTime)
       onTimeUpdate?.(audio.currentTime)
     }
     const handleLoaded = () => {
-      setDuration(audio.duration || 0)
+      setDuration(resolveDisplayDuration(audio.duration || 0))
       setLoadError(null)
       setIsBuffering(false)
     }
@@ -75,6 +99,7 @@ export default function AdvancedAudioPlayer({
 
     audio.addEventListener('timeupdate', handleTimeUpdate)
     audio.addEventListener('loadedmetadata', handleLoaded)
+    audio.addEventListener('durationchange', handleLoaded)
     audio.addEventListener('ended', handleEnded)
     audio.addEventListener('error', handleError)
     audio.addEventListener('waiting', handleWaiting)
@@ -83,24 +108,31 @@ export default function AdvancedAudioPlayer({
     return () => {
       audio.removeEventListener('timeupdate', handleTimeUpdate)
       audio.removeEventListener('loadedmetadata', handleLoaded)
+      audio.removeEventListener('durationchange', handleLoaded)
       audio.removeEventListener('ended', handleEnded)
       audio.removeEventListener('error', handleError)
       audio.removeEventListener('waiting', handleWaiting)
       audio.removeEventListener('canplay', handleCanPlay)
     }
-  }, [audioUrl, onPause, onTimeUpdate])
+  }, [audioUrl, onPause, onTimeUpdate, syncDuration])
 
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = isMuted ? 0 : volume
     }
-  }, [volume, isMuted])
+  }, [volume, isMuted, audioUrl])
 
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.playbackRate = playbackRate
     }
   }, [playbackRate, audioUrl])
+
+  useEffect(() => {
+    if (syncDuration != null && Number.isFinite(syncDuration) && syncDuration > 0) {
+      setDuration((prev) => (prev > 0 ? Math.min(prev, syncDuration) : syncDuration))
+    }
+  }, [syncDuration])
 
   // Keep <audio> in sync when parent toggles play state (e.g. measure follow)
   useEffect(() => {
@@ -152,9 +184,13 @@ export default function AdvancedAudioPlayer({
   const handleSeek = (value: number) => {
     const audio = audioRef.current
     if (!audio) return
-    audio.currentTime = value
-    setCurrentTime(value)
-    onTimeUpdate?.(value)
+    const capped =
+      syncDuration != null && Number.isFinite(syncDuration) && syncDuration > 0
+        ? Math.min(value, syncDuration)
+        : value
+    audio.currentTime = capped
+    setCurrentTime(capped)
+    onTimeUpdate?.(capped)
   }
 
   const formatTime = (seconds: number) => {
@@ -226,9 +262,9 @@ export default function AdvancedAudioPlayer({
               {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
             </button>
             <div className={`ml-auto flex items-center gap-2 text-xs ${mutedClass}`}>
-              <span>{formatTime(currentTime)}</span>
+              <span data-testid="audio-current-time">{formatTime(currentTime)}</span>
               <span>/</span>
-              <span>{formatTime(duration)}</span>
+              <span data-testid="audio-duration">{formatTime(duration)}</span>
             </div>
           </div>
 
@@ -240,18 +276,33 @@ export default function AdvancedAudioPlayer({
             value={currentTime}
             onChange={(e) => handleSeek(Number(e.target.value))}
             className={`mt-2 ${rangeClass}`}
+            aria-label="재생 위치"
+            data-testid="audio-seek"
           />
-          {!compact && (
+          <div className="mt-2 flex items-center gap-2">
+            <Volume2 className={`h-3.5 w-3.5 shrink-0 ${isDark ? 'text-white/40' : 'text-gray-400'}`} />
             <input
               type="range"
               min={0}
               max={1}
               step={0.05}
               value={isMuted ? 0 : volume}
-              onChange={(e) => setVolume(Number(e.target.value))}
-              className={`mt-2 ${rangeClass}`}
+              onChange={(e) => {
+                const next = Number(e.target.value)
+                setVolume(next)
+                if (next > 0 && isMuted) setIsMuted(false)
+              }}
+              className={rangeClass}
+              aria-label="음량"
+              data-testid="audio-volume"
             />
-          )}
+            <span className={`w-8 shrink-0 text-right text-[10px] ${mutedClass}`} data-testid="audio-volume-pct">
+              {Math.round((isMuted ? 0 : volume) * 100)}%
+            </span>
+          </div>
+          <div className={`mt-1 text-[10px] ${mutedClass}`} data-testid="audio-rate-label">
+            속도 {playbackRate}x
+          </div>
 
           <audio ref={audioRef} src={audioUrl} preload="auto" className="hidden" />
         </>
